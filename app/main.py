@@ -1,5 +1,12 @@
 from fastapi import FastAPI
 from app.routes import status, session, lock
+from app.db import init_db
+
+
+
+
+init_db()
+
 
 app = FastAPI(
     title="Safe Kick Raspberry Pi API",

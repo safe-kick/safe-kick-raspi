@@ -40,11 +40,11 @@ def get_session_summary(session_id: int):
         return {
             "status": "error",
             "data": None,
-            "message": "세션 요약 정보를 찾을 수 없습니다."
+            "message": "세션 정보를 찾을 수 없습니다."
         }
 
     return {
         "status": "success",
         "data": summary,
-        "message": "세션 요약 조회에 성공했습니다."
+        "message": "세션 정보 조회에 성공했습니다."
     }

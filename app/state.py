@@ -20,4 +20,3 @@ current_session = {
 }
 
 
-last_session_summary = None
