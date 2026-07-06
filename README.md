@@ -1,4 +1,4 @@
-🍓 safe-kick-raspi
+# 🍓 safe-kick-raspi
 Safe Kick - 라즈베리파이 AI 서버  
 - FastAPI 기반으로 킥보드 상태 조회, 
 - 운행 세션 관리, 
@@ -7,7 +7,7 @@ Safe Kick - 라즈베리파이 AI 서버
 - SQLite 로그 저장, 
 - STM32 UART 통신을 담당합니다.
 ---
-📁 폴더 구조
+# 📁 폴더 구조
 ``` text
 safe-kick-raspi/
 │
