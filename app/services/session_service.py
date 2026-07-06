@@ -1,7 +1,9 @@
 import asyncio
 import json
+
 from app.db import get_connection
-import app.state as state
+from app.services import log_service
+from app.managers.session_manager import SessionManager
 
 
 def start_session(request):
@@ -17,20 +19,14 @@ def start_session(request):
     )
 
     conn.commit()
-
     session_id = cursor.lastrowid
-
     conn.close()
 
-    state.current_session["session_id"] = session_id
-    state.current_session["kickboard_id"] = request.kickboard_id
-    state.current_session["user_id"] = request.user_id
-    state.current_session["active"] = True
-    state.current_session["is_locked"] = False
-    state.current_session["status"] = "normal"
-    state.current_session["warning_reason"] = None
-    state.current_session["warning_count"] = 0
-    state.current_session["warning_reasons"] = []
+    SessionManager.start(
+        session_id=session_id,
+        kickboard_id=request.kickboard_id,
+        user_id=request.user_id
+    )
 
     return {
         "status": "success",
@@ -45,24 +41,30 @@ def start_session(request):
 
 
 async def stream_session():
-    while state.current_session["active"]:
-        event_data = {
-            "face_score": state.current_session["face_score"],
-            "weight": state.current_session["weight"],
-            "gas": state.current_session["gas"],
-            "is_two_person": state.current_session["is_two_person"],
-            "is_drunk": state.current_session["is_drunk"],
-            "is_locked": state.current_session["is_locked"],
-            "status": state.current_session["status"],
-            "warning_reason": state.current_session["warning_reason"]
-        }
+    tick = 0
+
+    while SessionManager.is_active():
+        event_data = SessionManager.get_stream_data()
 
         yield f"data: {json.dumps(event_data)}\n\n"
+
+        tick += 1
+
+        if tick % 5 == 0:
+            sensor = SessionManager.get_sensor_data()
+
+            log_service.save_sensor_log(
+                session_id=SessionManager.get_session_id(),
+                face_score=sensor["face_score"],
+                weight=sensor["weight"],
+                gas=sensor["gas"]
+            )
+
         await asyncio.sleep(1)
 
 
 def end_session():
-    session_id = state.current_session["session_id"]
+    session_id = SessionManager.get_session_id()
 
     if session_id is None:
         return {
@@ -85,7 +87,7 @@ def end_session():
         """,
         (
             "ended",
-            state.current_session["warning_count"],
+            SessionManager.get_warning_count(),
             session_id
         )
     )
@@ -113,22 +115,16 @@ def end_session():
 
     summary = dict(row)
 
-    state.current_session["active"] = False
-    state.current_session["is_locked"] = True
-    state.current_session["status"] = "ended"
-
-    state.current_session["session_id"] = None
-    state.current_session["kickboard_id"] = None
-    state.current_session["user_id"] = None
-    state.current_session["warning_reason"] = None
+    SessionManager.end()
 
     return {
         "status": "success",
         "data": summary,
         "message": "운행이 종료되었습니다."
     }
-def get_session_summary(session_id: int):
 
+
+def get_session_summary(session_id: int):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -149,7 +145,6 @@ def get_session_summary(session_id: int):
     )
 
     row = cursor.fetchone()
-
     conn.close()
 
     if row is None:

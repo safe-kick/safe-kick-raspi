@@ -1,19 +1,20 @@
-import app.state as state
+from app.managers.session_manager import SessionManager
+from app.services import log_service
 
 
 def lock_kickboard(session_id: int, reason: str):
-    if state.current_session["session_id"] != session_id and state.last_session_summary is None:
+    current_session_id = SessionManager.get_session_id()
+
+    if current_session_id != session_id:
         return None
 
-    state.current_session["is_locked"] = True
-    state.current_session["status"] = "warning" if reason != "user" else "ended"
-    state.current_session["warning_reason"] = reason
+    SessionManager.lock(reason)
 
     if reason != "user":
-        state.current_session["warning_count"] += 1
-
-        if reason not in state.current_session["warning_reasons"]:
-            state.current_session["warning_reasons"].append(reason)
+        log_service.save_warning_log(
+            session_id=session_id,
+            warning_type=reason
+        )
 
     return {
         "session_id": session_id,
@@ -23,18 +24,18 @@ def lock_kickboard(session_id: int, reason: str):
 
 
 def unlock_kickboard(session_id: int):
-    if state.current_session["session_id"] != session_id:
+    current_session_id = SessionManager.get_session_id()
+
+    if current_session_id != session_id:
         return None
 
-    if state.current_session["is_locked"] is False:
+    if SessionManager.is_locked() is False:
         return "already_unlocked"
 
-    if state.current_session["active"] is False:
+    if SessionManager.is_active() is False:
         return "inactive_session"
 
-    state.current_session["is_locked"] = False
-    state.current_session["status"] = "unlocked"
-    state.current_session["warning_reason"] = None
+    SessionManager.unlock()
 
     return {
         "session_id": session_id,
