@@ -1,6 +1,7 @@
 from app.managers.session_manager import SessionManager
 from app.services import log_service
-
+from app.services.uart_service import uart_service
+from app.constants.uart_commands import UARTCommand
 
 def lock_kickboard(session_id: int, reason: str):
     current_session_id = SessionManager.get_session_id()
@@ -9,6 +10,9 @@ def lock_kickboard(session_id: int, reason: str):
         return None
 
     SessionManager.lock(reason)
+
+    response = uart_service.send_command(UARTCommand.LOCK)
+    print(f"[UART] {response}")
 
     if reason != "user":
         log_service.save_warning_log(
@@ -36,6 +40,9 @@ def unlock_kickboard(session_id: int):
         return "inactive_session"
 
     SessionManager.unlock()
+
+    response = uart_service.send_command(UARTCommand.UNLOCK)
+    print(f"[UART] {response}")
 
     return {
         "session_id": session_id,
