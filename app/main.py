@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routes import status, session, lock
+from app.routes import status, session, lock, face
 from app.db import init_db
 
 
@@ -17,6 +17,7 @@ app = FastAPI(
 app.include_router(status.router)
 app.include_router(session.router)
 app.include_router(lock.router)
+app.include_router(face.router)
 
 @app.get("/")
 def root():
