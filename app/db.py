@@ -18,12 +18,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM sessions;")
-    rows = cursor.fetchall()
-
-    for row in rows:
-        print(dict(row))
-
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
