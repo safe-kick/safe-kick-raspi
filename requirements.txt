@@ -1,3 +1,7 @@
 fastapi
 uvicorn
 pyserial
+insightface
+onnxruntime
+opencv-python-headless
+numpy
