@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Optional, List
 
 from app.services import session_service
 
@@ -12,7 +13,7 @@ router = APIRouter()
 class SessionStartRequest(BaseModel):
     user_id: int
     kickboard_id: str
-    face_vector: List[float]
+    face_vector: Optional[List[float]] = None
 
 
 @router.post("/session/start")

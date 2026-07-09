@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from app.db import get_connection
-from app.services import log_service
+from app.services import log_service, face_service
 from app.managers.session_manager import SessionManager
 
 
@@ -27,6 +27,9 @@ def start_session(request):
         kickboard_id=request.kickboard_id,
         user_id=request.user_id
     )
+
+    if hasattr(request, "face_vector") and request.face_vector:
+        face_service.create_session_embedding(request.face_vector)
 
     return {
         "status": "success",

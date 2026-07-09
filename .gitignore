@@ -85,4 +85,29 @@ dist/
 *.tmp
 *.bak
 *.swp
+
+
+# ==========================
+# Face Embedding
+# ==========================
+db/*.npy
+
+# ==========================
+# Test Images
+# ==========================
+test/*.png
+test/*.jpg
+test/*.jpeg
+test/*.txt
+
+# test 폴더는 유지
+!test/.gitkeep
+!test/image_to_base64.py
+
+# ==========================
+# Temporary files
+# ==========================
+*.tmp
+*.bak
+*.swp
 ```
