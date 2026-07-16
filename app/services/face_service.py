@@ -6,12 +6,15 @@ import numpy as np
 
 from insightface.app import FaceAnalysis
 
-
 FACE_MODEL_NAME = "buffalo_sc"
 FACE_PROVIDER = ["CPUExecutionProvider"]
 FACE_DET_SIZE = (320, 320)
 
-REGISTERED_MATCH_THRESHOLD = 0.5
+REGISTERED_MATCH_THRESHOLD = 0.4
+
+
+def get_license_embedding_path(user_id: int):
+    return f"db/users/{user_id}/license_embedding.npy"
 
 
 class FaceService:
@@ -177,7 +180,7 @@ class FaceService:
                 "match": False,
                 "confidence": 0.0,
                 "face_vector": [],
-                "reason": "registered_embedding_not_found"
+                "reason": "license_embedding_not_found"
             }
 
         registered_embedding = np.load(
