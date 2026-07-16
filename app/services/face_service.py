@@ -1,5 +1,6 @@
 import os
 import base64
+
 import cv2
 import numpy as np
 
@@ -28,22 +29,71 @@ class FaceService:
             det_size=FACE_DET_SIZE
         )
 
+    def get_license_embedding_path(self, user_id: int):
+        """
+        사용자별 면허증 얼굴 embedding 저장 경로를 반환한다.
+
+        예:
+        db/users/1/license_embedding.npy
+        """
+        return f"db/users/{user_id}/license_embedding.npy"
+
     def decode_base64_image(self, image_base64: str):
-        if "," in image_base64:
-            image_base64 = image_base64.split(",")[1]
+        """
+        Base64 문자열을 OpenCV 이미지로 변환한다.
+        잘못된 Base64이면 None을 반환한다.
+        """
+        try:
+            if not image_base64:
+                return None
 
-        image_bytes = base64.b64decode(image_base64)
-        np_arr = np.frombuffer(image_bytes, np.uint8)
+            if "," in image_base64:
+                image_base64 = image_base64.split(",", 1)[1]
 
-        return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            image_bytes = base64.b64decode(
+                image_base64,
+                validate=True
+            )
+
+            np_arr = np.frombuffer(
+                image_bytes,
+                np.uint8
+            )
+
+            return cv2.imdecode(
+                np_arr,
+                cv2.IMREAD_COLOR
+            )
+
+        except Exception as error:
+            print(f"[FACE] 이미지 디코딩 실패: {error}")
+            return None
 
     def cosine_similarity(self, a, b):
+        """
+        두 얼굴 embedding의 코사인 유사도를 계산한다.
+        """
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+
         return float(
             np.dot(a, b) /
-            (np.linalg.norm(a) * np.linalg.norm(b))
+            (norm_a * norm_b)
         )
 
     def extract_embedding(self, img):
+        """
+        이미지에서 얼굴을 검출하고 embedding을 반환한다.
+
+        얼굴이 여러 명이면 가장 큰 얼굴을 사용한다.
+        얼굴을 찾지 못하면 None을 반환한다.
+        """
+        if img is None:
+            return None
+
         faces = self.app.get(img)
 
         if len(faces) == 0:
@@ -59,16 +109,23 @@ class FaceService:
 
         return face.embedding
 
-    def register_face(self, user_id: int, image_base64: str):
+    def register_face(
+        self,
+        user_id: int,
+        image_base64: str
+    ):
         """
-        면허증 이미지에서 얼굴을 검출하고,
-        사용자별 license_embedding.npy로 저장한다.
+        면허증 이미지에서 얼굴 embedding을 추출하고
+        사용자별 파일로 저장한다.
         """
-        img = self.decode_base64_image(image_base64)
+        img = self.decode_base64_image(
+            image_base64
+        )
 
         if img is None:
             return {
                 "registered": False,
+                "user_id": user_id,
                 "reason": "invalid_image"
             }
 
@@ -77,11 +134,15 @@ class FaceService:
         if embedding is None:
             return {
                 "registered": False,
+                "user_id": user_id,
                 "reason": "face_not_detected"
             }
 
-        embedding_path = get_license_embedding_path(user_id)
+        embedding_path = (
+            self.get_license_embedding_path(user_id)
+        )
 
+        # db/users/{user_id} 폴더가 없으면 자동 생성한다.
         os.makedirs(
             os.path.dirname(embedding_path),
             exist_ok=True
@@ -102,11 +163,17 @@ class FaceService:
             "reason": "success"
         }
 
-    def verify_face(self, user_id: int, image_base64: str):
+    def verify_face(
+        self,
+        user_id: int,
+        image_base64: str
+    ):
         """
-        현재 셀피 얼굴과 해당 사용자의 면허증 얼굴 embedding을 비교한다.
+        현재 셀피와 사용자의 면허증 얼굴 embedding을 비교한다.
         """
-        embedding_path = get_license_embedding_path(user_id)
+        embedding_path = (
+            self.get_license_embedding_path(user_id)
+        )
 
         if not os.path.exists(embedding_path):
             return {
@@ -116,9 +183,13 @@ class FaceService:
                 "reason": "license_embedding_not_found"
             }
 
-        license_embedding = np.load(embedding_path)
+        registered_embedding = np.load(
+            embedding_path
+        )
 
-        img = self.decode_base64_image(image_base64)
+        img = self.decode_base64_image(
+            image_base64
+        )
 
         if img is None:
             return {
@@ -128,9 +199,11 @@ class FaceService:
                 "reason": "invalid_image"
             }
 
-        selfie_embedding = self.extract_embedding(img)
+        current_embedding = (
+            self.extract_embedding(img)
+        )
 
-        if selfie_embedding is None:
+        if current_embedding is None:
             return {
                 "match": False,
                 "confidence": 0.0,
@@ -139,26 +212,45 @@ class FaceService:
             }
 
         similarity = self.cosine_similarity(
-            license_embedding,
-            selfie_embedding
+            registered_embedding,
+            current_embedding
         )
 
-        match = similarity >= REGISTERED_MATCH_THRESHOLD
+        match = (
+            similarity >=
+            REGISTERED_MATCH_THRESHOLD
+        )
 
         return {
             "match": match,
             "confidence": similarity,
-            "face_vector": selfie_embedding.tolist(),
-            "reason": "success" if match else "not_matched"
+            "face_vector": current_embedding.tolist(),
+            "reason": (
+                "success"
+                if match
+                else "not_matched"
+            )
         }
 
 
 face_service = FaceService()
 
 
-def register_face(user_id: int, image_base64: str):
-    return face_service.register_face(user_id, image_base64)
+def register_face(
+    user_id: int,
+    image_base64: str
+):
+    return face_service.register_face(
+        user_id,
+        image_base64
+    )
 
 
-def verify_face(user_id: int, image_base64: str):
-    return face_service.verify_face(user_id, image_base64)
+def verify_face(
+    user_id: int,
+    image_base64: str
+):
+    return face_service.verify_face(
+        user_id,
+        image_base64
+    )
