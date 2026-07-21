@@ -18,6 +18,9 @@ class FaceVerifyRequest(BaseModel):
     user_id: int
     image: str
 
+class FaceDetectRequest(BaseModel):
+    image: str
+
 
 @router.post("/face/register")
 def register_face(
@@ -78,5 +81,41 @@ def verify_face(
             "얼굴 인증이 완료되었습니다."
             if result["match"]
             else "얼굴 인증에 실패했습니다."
+        )
+    }
+
+
+@router.post("/face/detect")
+def detect_face(
+    request: FaceDetectRequest
+):
+    """
+    회원가입 전에 면허증 이미지에서
+    얼굴 검출 가능 여부만 확인한다.
+    """
+
+    result = face_service.detect_face(
+        request.image
+    )
+
+    reason_messages = {
+        "success":
+            "면허증에서 얼굴을 검출했습니다.",
+        "face_not_detected":
+            "면허증에서 얼굴을 인식하지 못했습니다.",
+        "invalid_image":
+            "면허증 이미지가 올바르지 않습니다."
+    }
+
+    return {
+        "status": (
+            "success"
+            if result["detected"]
+            else "error"
+        ),
+        "data": result,
+        "message": reason_messages.get(
+            result["reason"],
+            "면허증 얼굴 검출에 실패했습니다."
         )
     }
