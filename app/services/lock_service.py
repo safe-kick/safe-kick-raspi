@@ -1,50 +1,32 @@
 from app.managers.session_manager import SessionManager
-from app.services import log_service
-from app.services.uart_service import uart_service
-from app.constants.uart_commands import UARTCommand
+from app.services.safety_service import safety_service
+
 
 def lock_kickboard(session_id: int, reason: str):
-    current_session_id = SessionManager.get_session_id()
-
-    if current_session_id != session_id:
+    if SessionManager.get_session_id() != session_id:
         return None
-
-    SessionManager.lock(reason)
-
-    response = uart_service.send_command(UARTCommand.LOCK)
-    print(f"[UART] {response}")
-
-    if reason != "user":
-        log_service.save_warning_log(
-            session_id=session_id,
-            warning_type=reason
-        )
-
+    safety_service.request_lock(reason)
     return {
         "session_id": session_id,
-        "is_locked": True,
-        "reason": reason
+        "is_locked": SessionManager.is_locked(),
+        "reason": reason,
+        "safety_state": safety_service.status()["safety_state"],
     }
 
 
 def unlock_kickboard(session_id: int):
-    current_session_id = SessionManager.get_session_id()
-
-    if current_session_id != session_id:
+    if SessionManager.get_session_id() != session_id:
         return None
-
-    if SessionManager.is_locked() is False:
+    if not SessionManager.is_active():
+        return "inactive_session"
+    if not SessionManager.is_locked():
         return "already_unlocked"
 
-    if SessionManager.is_active() is False:
-        return "inactive_session"
-
-    SessionManager.unlock()
-
-    response = uart_service.send_command(UARTCommand.UNLOCK)
-    print(f"[UART] {response}")
-
+    result = safety_service.request_manual_unlock()
+    if result != "accepted":
+        return result
     return {
         "session_id": session_id,
-        "is_locked": False
+        "is_locked": SessionManager.is_locked(),
+        "safety_state": safety_service.status()["safety_state"],
     }

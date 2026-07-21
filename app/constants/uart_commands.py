@@ -1,15 +1,8 @@
 class UARTCommand:
-    # Connection
-    PING = "PING"
-
-    # Kickboard Control
     LOCK = "LOCK"
     UNLOCK = "UNLOCK"
-
-    # Sensor Request
-    REQUEST_MQ3 = "REQ:MQ3"
-    REQUEST_WEIGHT = "REQ:WEIGHT"
-    REQUEST_FACE = "REQ:FACE"
-
-    # Status Request
-    REQUEST_STATUS = "REQ:STATUS"
+    CHECK_MQ3 = "CHECK_MQ3"
+    CHECK_WEIGHT = "CHECK_WEIGHT"
+    STOP_WEIGHT = "STOP_WEIGHT"
+    BUZZ_ON = "BUZZ_ON"
+    BUZZ_OFF = "BUZZ_OFF"

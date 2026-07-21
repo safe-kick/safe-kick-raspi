@@ -9,8 +9,8 @@ class SessionManager:
         state.current_session["session"]["user_id"] = user_id
         state.current_session["session"]["active"] = True
 
-        state.current_session["device"]["is_locked"] = False
-        state.current_session["device"]["status"] = "normal"
+        state.current_session["device"]["is_locked"] = True
+        state.current_session["device"]["status"] = "waiting_auth"
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["count"] = 0
@@ -55,6 +55,35 @@ class SessionManager:
         state.current_session["device"]["is_locked"] = False
         state.current_session["device"]["status"] = "unlocked"
         state.current_session["warning"]["current_reason"] = None
+        state.current_session["warning"]["is_two_person"] = False
+
+    @staticmethod
+    def confirm_locked(status: str = "locked"):
+        state.current_session["device"]["is_locked"] = True
+        state.current_session["device"]["status"] = status
+
+    @staticmethod
+    def warn_two_person():
+        state.current_session["device"]["status"] = "warning"
+        state.current_session["warning"]["current_reason"] = "two_person"
+        state.current_session["warning"]["is_two_person"] = True
+        state.current_session["warning"]["count"] += 1
+        if "two_person" not in state.current_session["warning"]["reasons"]:
+            state.current_session["warning"]["reasons"].append("two_person")
+
+    @staticmethod
+    def clear_warning():
+        state.current_session["device"]["status"] = "unlocked"
+        state.current_session["warning"]["current_reason"] = None
+        state.current_session["warning"]["is_two_person"] = False
+
+    @staticmethod
+    def set_safety_state(safety_state: str):
+        state.current_session["device"]["safety_state"] = safety_state
+
+    @staticmethod
+    def set_stm32_connected(connected: bool):
+        state.current_session["device"]["stm32_connected"] = connected
 
     @staticmethod
     def update_face_score(score: float):
@@ -71,6 +100,10 @@ class SessionManager:
     @staticmethod
     def get_session_id():
         return state.current_session["session"]["session_id"]
+
+    @staticmethod
+    def get_user_id():
+        return state.current_session["session"]["user_id"]
 
     @staticmethod
     def is_active():
@@ -95,7 +128,13 @@ class SessionManager:
             "is_locked": state.current_session["device"]["is_locked"],
             "status": state.current_session["device"]["status"],
             "warning_reason": state.current_session["warning"]["current_reason"],
+            "safety_state": state.current_session["device"]["safety_state"],
+            "stm32_connected": state.current_session["device"]["stm32_connected"],
         }
+
+    @staticmethod
+    def get_device_data():
+        return dict(state.current_session["device"])
 
     @staticmethod
     def get_sensor_data():

@@ -63,6 +63,20 @@ def unlock_kickboard(request: UnlockRequest):
             "message": "종료된 세션은 잠금 해제할 수 없습니다."
         }
 
+    if result == "manual_unlock_disabled":
+        return {
+            "status": "error",
+            "data": None,
+            "message": "직접 잠금 해제는 비활성화되어 있습니다. 앱 인증과 안전 검사를 진행하세요."
+        }
+
+    if result == "stm32_disconnected":
+        return {
+            "status": "error",
+            "data": None,
+            "message": "STM32가 연결되지 않아 잠금 해제할 수 없습니다."
+        }
+
     return {
         "status": "success",
         "data": result,

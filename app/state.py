@@ -20,5 +20,7 @@ current_session = {
     "device": {
         "is_locked": True,
         "status": "waiting",
+        "stm32_connected": False,
+        "safety_state": "starting",
     },
 }

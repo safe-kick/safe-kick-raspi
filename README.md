@@ -13,6 +13,62 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - 운전면허증 얼굴 등록
 - 셀피 얼굴 인증
 - 사용자별 얼굴 임베딩 저장
+- 앱 인증 이후 STM32 안전 절차 자동 실행
+- 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
+
+## STM32 안전 절차
+
+```text
+Raspberry Pi 연결
+  -> LOCK / LOCK_OK
+  -> 앱 QR·회원·얼굴 인증 완료 대기
+  -> CHECK_MQ3
+  -> 음주 검사 통과
+  -> 무게 측정 시작 이벤트 대기
+  -> CHECK_WEIGHT
+  -> 최근 3회 무게가 20~100kg, 편차 5kg 이내인지 확인
+  -> UNLOCK / UNLOCK_OK
+  -> 주행 중 무게 감시
+  -> 110kg 이상 4초 지속: BUZZ_ON
+  -> 추가 10초 지속: LOCK
+```
+
+`/unlock` 직접 호출은 기본적으로 차단됩니다. 하드웨어 테스트에서만
+`ALLOW_MANUAL_UNLOCK=true`를 설정해 사용합니다. UART 장비 없이 API 흐름을
+시험할 때는 기본값인 `USE_UART_MOCK=true`를 사용하고, 실제 연결 시
+`USE_UART_MOCK=false`와 `SERIAL_PORT=/dev/serial0`을 설정합니다.
+
+## 백엔드 연동 전 테스트
+
+얼굴 인식과 백엔드를 제외한 라즈베리파이·STM32 흐름만 시험할 수 있습니다.
+테스트 전용 API는 `ENABLE_TEST_API=true`일 때만 등록됩니다.
+
+```bash
+python3 -m pip install -r requirements-test.txt
+ENABLE_FACE_API=false ENABLE_TEST_API=true USE_UART_MOCK=true \
+  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+다른 터미널에서 세션을 만들고 인증 완료 이벤트를 전달합니다.
+
+```bash
+curl -X POST http://127.0.0.1:8000/session/start \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":7,"kickboard_id":"KB-001"}'
+
+curl -X POST http://127.0.0.1:8000/test/auth-complete \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":7}'
+
+curl -X POST http://127.0.0.1:8000/test/weight-check \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":7}'
+
+curl http://127.0.0.1:8000/status
+```
+
+실제 STM32 테스트에서는 서버 실행 명령의 `USE_UART_MOCK=true`를
+`USE_UART_MOCK=false SERIAL_PORT=/dev/serial0`으로 변경합니다.
 
 ---
 
@@ -39,6 +95,8 @@ safe-kick-raspi/
 │   │   ├── uart_service.py           # STM32 UART 통신
 │   │   └── face_service.py           # InsightFace 얼굴 검출·비교
 │   │
+│   ├── safety/                        # STM32 프로토콜 및 안전 판단 상태 머신
+│   │
 │   ├── managers/
 │   │   └── session_manager.py        # 세션 상태 및 얼굴 점수 관리
 │   │
@@ -57,6 +115,7 @@ safe-kick-raspi/
 │   └── test_db.py
 │
 ├── requirements.txt
+├── config.toml                        # UART·음주·탑승 판단 기준값
 ├── .gitignore
 └── README.md
 ```
