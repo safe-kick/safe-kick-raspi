@@ -231,6 +231,35 @@ class FaceService:
                 else "not_matched"
             )
         }
+    def detect_face(self, image_base64: str):
+        """
+        이미지에 얼굴이 존재하는지만 확인한다.
+
+        이 단계에서는 임베딩 파일을 저장하지 않는다.
+        """
+
+        img = self.decode_base64_image(
+            image_base64
+        )
+
+        if img is None:
+            return {
+                "detected": False,
+                "reason": "invalid_image"
+            }
+
+        embedding = self.extract_embedding(img)
+
+        if embedding is None:
+            return {
+                "detected": False,
+                "reason": "face_not_detected"
+            }
+
+        return {
+            "detected": True,
+            "reason": "success"
+        }
 
 
 face_service = FaceService()
@@ -252,5 +281,10 @@ def verify_face(
 ):
     return face_service.verify_face(
         user_id,
+        image_base64
+    )
+
+def detect_face(image_base64: str):
+    return face_service.detect_face(
         image_base64
     )
