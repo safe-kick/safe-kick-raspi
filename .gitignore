@@ -91,6 +91,7 @@ dist/
 # Face Embedding
 # ==========================
 db/*.npy
+db/users/
 
 # ==========================
 # Test Images
@@ -99,6 +100,9 @@ test/*.png
 test/*.jpg
 test/*.jpeg
 test/*.txt
+
+# 로컬 얼굴 인증 테스트
+test/verify_test.py
 
 # test 폴더는 유지
 !test/.gitkeep
