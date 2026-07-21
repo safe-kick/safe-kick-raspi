@@ -1,0 +1,22 @@
+[serial]
+port = "/dev/serial0"
+baudrate = 115200
+read_timeout_seconds = 0.2
+reconnect_delay_seconds = 2.0
+
+[alcohol]
+minimum_delta = 100
+required_positive_samples = 5
+minimum_sample_count = 8
+
+[boarding]
+sample_count = 3
+minimum_rider_kg = 20.0
+maximum_rider_kg = 100.0
+stability_range_kg = 5.0
+
+[weight]
+deadband_kg = 2.0
+two_person_threshold_kg = 110.0
+warning_after_seconds = 4.0
+lock_after_warning_seconds = 10.0

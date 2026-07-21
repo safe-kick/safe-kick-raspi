@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from app.services import face_service
 from app.managers.session_manager import SessionManager
+from app.services.safety_service import safety_service
 
 
 router = APIRouter()
@@ -61,6 +62,9 @@ def verify_face(
     if result["match"]:
         SessionManager.update_face_score(
             result["confidence"]
+        )
+        result["safety_check_started"] = safety_service.authentication_completed(
+            request.user_id
         )
 
     return {

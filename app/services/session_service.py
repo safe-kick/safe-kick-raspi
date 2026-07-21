@@ -2,8 +2,9 @@ import asyncio
 import json
 
 from app.db import get_connection
-from app.services import log_service, face_service
+from app.services import log_service
 from app.managers.session_manager import SessionManager
+from app.services.safety_service import safety_service
 
 
 def start_session(request):
@@ -27,9 +28,7 @@ def start_session(request):
         kickboard_id=request.kickboard_id,
         user_id=request.user_id
     )
-
-    if hasattr(request, "face_vector") and request.face_vector:
-        face_service.create_session_embedding(request.face_vector)
+    safety_service.prepare_session()
 
     return {
         "status": "success",
@@ -37,9 +36,10 @@ def start_session(request):
             "session_id": session_id,
             "kickboard_id": request.kickboard_id,
             "user_id": request.user_id,
-            "monitoring": True
+            "monitoring": False,
+            "safety_state": safety_service.status()["safety_state"]
         },
-        "message": "운행 세션이 시작되었습니다."
+        "message": "세션이 생성되었습니다. 앱 인증 완료 후 안전 검사를 시작합니다."
     }
 
 
@@ -75,6 +75,8 @@ def end_session():
             "data": None,
             "message": "활성화된 세션이 없습니다."
         }
+
+    safety_service.request_lock("user")
 
     conn = get_connection()
     cursor = conn.cursor()
