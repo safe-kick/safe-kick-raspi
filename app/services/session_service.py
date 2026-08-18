@@ -2,7 +2,7 @@ import asyncio
 import json
 
 from app.db import get_connection
-from app.services import log_service
+from app.services.backend_service import send_session_summary
 from app.managers.session_manager import SessionManager
 from app.services.safety_service import safety_service
 
@@ -44,24 +44,10 @@ def start_session(request):
 
 
 async def stream_session():
-    tick = 0
-
     while SessionManager.is_active():
         event_data = SessionManager.get_stream_data()
 
         yield f"data: {json.dumps(event_data)}\n\n"
-
-        tick += 1
-
-        if tick % 5 == 0:
-            sensor = SessionManager.get_sensor_data()
-
-            log_service.save_sensor_log(
-                session_id=SessionManager.get_session_id(),
-                face_score=sensor["face_score"],
-                weight=sensor["weight"],
-                gas=sensor["gas"]
-            )
 
         await asyncio.sleep(1)
 
@@ -119,12 +105,18 @@ def end_session():
     conn.close()
 
     summary = dict(row)
+    summary["sensor"] = SessionManager.get_sensor_data()
+    summary["warning_reasons"] = SessionManager.get_warning_reasons()
 
     SessionManager.end()
+    backend_sync = send_session_summary(summary)
 
     return {
         "status": "success",
-        "data": summary,
+        "data": {
+            **summary,
+            "backend_sync": backend_sync,
+        },
         "message": "운행이 종료되었습니다."
     }
 

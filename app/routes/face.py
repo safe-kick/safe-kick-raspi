@@ -1,9 +1,13 @@
-from fastapi import APIRouter
+import hmac
+import os
+
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from app.services import face_service
 from app.managers.session_manager import SessionManager
 from app.services.safety_service import safety_service
+from app.services.face_attempt_service import face_attempt_service
 
 
 router = APIRouter()
@@ -57,17 +61,37 @@ def verify_face(
     """
     현재 셀피와 저장된 면허증 얼굴을 비교한다.
     """
+    attempt_status = face_attempt_service.get_status(request.user_id)
+    if not attempt_status.allowed:
+        return {
+            "status": "error",
+            "data": {
+                "match": False,
+                "confidence": 0.0,
+                "face_vector": [],
+                "reason": "retry_limit_exceeded",
+                **attempt_status.to_dict(),
+            },
+            "message": "얼굴 인증 재시도 제한에 도달했습니다. 잠시 후 다시 시도하세요."
+        }
+
     result = face_service.verify_face(
         request.user_id,
         request.image
     )
 
     if result["match"]:
+        face_attempt_service.reset(request.user_id)
         SessionManager.update_face_score(
             result["confidence"]
         )
         result["safety_check_started"] = safety_service.authentication_completed(
             request.user_id
+        )
+        result.update(face_attempt_service.get_status(request.user_id).to_dict())
+    else:
+        result.update(
+            face_attempt_service.record_failure(request.user_id).to_dict()
         )
 
     return {
@@ -118,4 +142,35 @@ def detect_face(
             result["reason"],
             "면허증 얼굴 검출에 실패했습니다."
         )
+    }
+
+
+@router.delete("/face/embedding/{user_id}")
+def delete_face_embedding(
+    user_id: int,
+    x_internal_api_key: str | None = Header(default=None),
+):
+    """Delete a user's biometric template after a backend account deletion."""
+    expected_key = os.getenv("INTERNAL_API_KEY")
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_API_KEY is not configured",
+        )
+    if x_internal_api_key is None or not hmac.compare_digest(
+        x_internal_api_key,
+        expected_key,
+    ):
+        raise HTTPException(status_code=401, detail="Invalid internal API key")
+
+    result = face_service.delete_face(user_id)
+    face_attempt_service.reset(user_id)
+    return {
+        "status": "success",
+        "data": result,
+        "message": (
+            "얼굴 임베딩을 삭제했습니다."
+            if result["deleted"]
+            else "저장된 얼굴 임베딩이 없습니다."
+        ),
     }

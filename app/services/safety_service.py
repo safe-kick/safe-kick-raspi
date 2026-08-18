@@ -136,14 +136,19 @@ class SafetyService:
         message = parse_line(line)
         with self._lock:
             previous = self.controller.state
+            sensor_updated = False
             if message.type is MessageType.WEIGHT_SAMPLE and isinstance(message.value, WeightReading):
                 SessionManager.update_weight(message.value.total)
+                sensor_updated = True
             elif message.type is MessageType.MQ3_SAMPLE:
                 SessionManager.update_gas(float(message.value))
+                sensor_updated = True
 
             self.controller.handle(message)
             self._sync_transition(previous, self.controller.state)
             self._sync_state()
+            if sensor_updated:
+                self._save_sensor_snapshot()
 
     def _sync_transition(self, previous: SystemState, current: SystemState) -> None:
         if current is previous:
@@ -177,6 +182,18 @@ class SafetyService:
 
     def _sync_state(self) -> None:
         SessionManager.set_safety_state(self.controller.state.name.lower())
+
+    def _save_sensor_snapshot(self) -> None:
+        session_id = SessionManager.get_session_id()
+        if session_id is None or not SessionManager.is_active():
+            return
+        sensor = SessionManager.get_sensor_data()
+        log_service.save_sensor_log(
+            session_id=session_id,
+            face_score=sensor["face_score"],
+            weight=sensor["weight"],
+            gas=sensor["gas"],
+        )
 
 
 safety_service = SafetyService()
