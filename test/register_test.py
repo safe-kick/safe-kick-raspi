@@ -3,7 +3,7 @@ import requests
 import sys
 from pathlib import Path
 
-SERVER = "http://10.10.141.46:8000"
+SERVER = "http://100.115.171.90:8000"
 USER_ID = 1
 
 if len(sys.argv) != 2:

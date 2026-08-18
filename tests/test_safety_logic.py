@@ -21,6 +21,11 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
         self.assertEqual(message.value.total, 65.0)
 
+    def test_protocol_parses_negative_sensor_noise(self) -> None:
+        message = parse_line("FL:-0.01 FR:+0.01 RL:0.00 RR:-0.00 TOTAL:0.00")
+        self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
+        self.assertEqual(message.value.fl, -0.01)
+
     def test_boarding_requires_three_stable_samples(self) -> None:
         monitor = BoardingMonitor(BoardingConfig())
         readings = [
@@ -64,6 +69,28 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertEqual(monitor.observe(120, 0), OccupancyAction.NONE)
         self.assertEqual(monitor.observe(120, 4), OccupancyAction.WARN)
         self.assertEqual(monitor.observe(120, 14), OccupancyAction.LOCK)
+
+    def test_two_person_warning_clears_when_weight_recovers(self) -> None:
+        monitor = OccupancyMonitor(WeightConfig(two_person_threshold_kg=110))
+        self.assertEqual(monitor.observe(120, 0), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(120, 4), OccupancyAction.WARN)
+        self.assertEqual(monitor.observe(80, 5), OccupancyAction.CLEAR_WARNING)
+        self.assertEqual(monitor.observe(120, 6), OccupancyAction.NONE)
+
+    def test_unsafe_alcohol_result_keeps_vehicle_locked(self) -> None:
+        commands: list[str] = []
+        controller = Controller(AppConfig(), commands.append)
+        controller.on_connected()
+        controller.handle(parse_line("LOCK_OK"))
+        controller.on_authentication_completed()
+        controller.handle(parse_line("MQ3_BASELINE:600"))
+        for value in [720] * 8:
+            controller.handle(parse_line(f"MQ3:{value}"))
+        controller.handle(parse_line("[END_MQ3]"))
+
+        self.assertEqual(controller.state, SystemState.LOCKED)
+        self.assertTrue(controller.last_alcohol_result.unsafe)
+        self.assertEqual(commands[-1], "LOCK")
 
 
 if __name__ == "__main__":

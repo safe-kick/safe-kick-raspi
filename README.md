@@ -70,6 +70,12 @@ curl http://127.0.0.1:8000/status
 실제 STM32 테스트에서는 서버 실행 명령의 `USE_UART_MOCK=true`를
 `USE_UART_MOCK=false SERIAL_PORT=/dev/serial0`으로 변경합니다.
 
+전체 자동 테스트는 다음 명령으로 실행합니다.
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
 ---
 
 # 📁 폴더 구조
@@ -371,6 +377,39 @@ POST /face/verify
 
 얼굴 인증에 성공하면 유사도 점수가 `SessionManager`에 저장됩니다.
 
+### 얼굴 인증 재시도 제한
+
+얼굴 인증 실패 횟수는 SQLite에 저장되며 기본 3회 실패 시 5분 동안 해당
+사용자의 인증을 차단합니다. 성공하거나 잠금 시간이 끝나면 횟수가 초기화됩니다.
+
+```env
+FACE_MAX_VERIFY_ATTEMPTS=3
+FACE_VERIFY_LOCKOUT_SECONDS=300
+FACE_MATCH_THRESHOLD=0.5
+```
+
+제한 중인 응답에는 `reason=retry_limit_exceeded`, `failed_attempts`,
+`attempts_remaining`, `retry_after_seconds`가 포함됩니다.
+
+### 사용자 탈퇴 시 임베딩 삭제
+
+Node.js 백엔드는 사용자 탈퇴 처리 중 다음 내부 API를 호출합니다.
+
+```http
+DELETE /face/embedding/{user_id}
+X-Internal-Api-Key: {INTERNAL_API_KEY}
+```
+
+서버 실행 전에 충분히 긴 내부 API 키를 설정해야 합니다.
+
+```env
+INTERNAL_API_KEY=replace-with-a-long-random-secret
+```
+
+임베딩 디렉터리는 소유자만 접근 가능한 `0700`, 파일은 `0600` 권한으로
+원자적으로 저장됩니다. 저장 위치는 필요할 때 `FACE_EMBEDDING_DIR`로 변경할 수
+있습니다.
+
 ---
 
 # 🤖 얼굴 인식 설정
@@ -494,6 +533,9 @@ SSE /session/stream
 React Native 모니터링 화면
 ```
 
+센서 로그 저장은 SSE 접속 여부와 무관합니다. UART로 MQ-3 또는 무게 샘플을
+받을 때마다 활성 세션의 최신 센서 상태를 SQLite에 기록합니다.
+
 SSE는 다음 상태가 변경될 때 프론트에 실시간 정보를 전달합니다.
 
 - 잠금 상태
@@ -519,7 +561,7 @@ SSE는 다음 상태가 변경될 때 프론트에 실시간 정보를 전달합
 ```ts
 export const API_BASE = "http://Node서버-Tailscale-IP";
 
-export const RASPI_IP = "RaspberryPi-Tailscale-IP";
+export const RASPI_IP = "100.115.171.90";
 export const RASPI_API_BASE =
   `http://${RASPI_IP}:8000`;
 ```
@@ -585,7 +627,56 @@ http://라즈베리파이IP:8000/docs
 Tailscale 사용 시:
 
 ```text
-http://라즈베리파이-Tailscale-IP:8000/docs
+http://100.115.171.90:8000/docs
+```
+
+## Node.js 운행 종료 요약 연동
+
+`NODE_SUMMARY_URL`이 설정되어 있으면 `POST /session/end` 처리 후 Node.js로
+운행 요약을 전송합니다. 전송 실패가 라즈베리파이의 로컬 세션 종료를 취소하지는
+않으며, API 응답의 `data.backend_sync`에서 성공 또는 실패를 확인할 수 있습니다.
+
+```env
+NODE_SUMMARY_URL=http://node-server:3000/api/rides/summary
+NODE_SUMMARY_TOKEN=replace-with-backend-token
+NODE_SUMMARY_TIMEOUT_SECONDS=3
+```
+
+요청 본문 형식은 다음과 같습니다.
+
+```json
+{
+  "event": "session.ended",
+  "data": {
+    "id": 1,
+    "kickboard_id": "KB-001",
+    "user_id": 7,
+    "started_at": "...",
+    "ended_at": "...",
+    "status": "ended",
+    "warning_count": 0,
+    "sensor": {"face_score": 0.8, "weight": 65.0, "gas": 640.0},
+    "warning_reasons": []
+  }
+}
+```
+
+## 실제 STM32 UART 검증
+
+킥보드를 안전하게 고정한 상태에서 센서 통신을 검증합니다. 스크립트는 항상
+먼저 `LOCK`을 보내고 종료 시에도 `BUZZ_OFF`, `LOCK`을 전송합니다.
+
+```bash
+python3 scripts/verify_stm32_uart.py --port /dev/serial0
+```
+
+위 명령은 `LOCK_OK`, MQ-3 baseline과 샘플 8개, 무게 샘플 3개를 검증합니다.
+릴레이 잠금 해제와 부저까지 시험할 때만 명시적으로 다음 옵션을 사용합니다.
+
+```bash
+python3 scripts/verify_stm32_uart.py \
+  --port /dev/serial0 \
+  --test-actuators
 ```
 
 ---
@@ -688,12 +779,8 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 
 # 🔜 다음 구현 및 개선 예정
 
-- STM32 UART 실제 하드웨어 통합 검증
-- MQ-3 알코올 센서 측정값 연동
-- 무게 센서를 이용한 2인 탑승 감지
+- 실제 장비에서 `scripts/verify_stm32_uart.py` 검증 완료
 - 얼굴 등록 실패 시 프론트 면허증 재촬영 흐름 적용
-- 얼굴 인증 실패 횟수 및 재시도 제한
-- 사용자 탈퇴 시 얼굴 임베딩 삭제
-- 임베딩 파일 암호화 또는 접근 권한 강화
-- Node.js 서버와 운행 종료 요약 연동
-- 센서 및 얼굴 인증 통합 테스트
+- 운영 환경 비밀 관리 시스템에 내부 API 키와 Node.js 토큰 등록
+- 네트워크 장애 시 Node.js 요약 전송 재시도 큐 추가
+- 필요 시 OS 파일 권한 보호에 더해 임베딩 저장 암호화 적용

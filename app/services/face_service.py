@@ -1,33 +1,42 @@
-import os
 import base64
+import os
+import threading
 
 import cv2
 import numpy as np
 
-from insightface.app import FaceAnalysis
+from app.services.embedding_store import embedding_store
 
 FACE_MODEL_NAME = "buffalo_sc"
 FACE_PROVIDER = ["CPUExecutionProvider"]
 FACE_DET_SIZE = (320, 320)
 
-REGISTERED_MATCH_THRESHOLD = 0.4
+REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.5"))
 
 
 def get_license_embedding_path(user_id: int):
-    return f"db/users/{user_id}/license_embedding.npy"
+    return str(embedding_store.path_for(user_id))
 
 
 class FaceService:
     def __init__(self):
-        self.app = FaceAnalysis(
-            name=FACE_MODEL_NAME,
-            providers=FACE_PROVIDER
-        )
+        self._app = None
+        self._model_lock = threading.Lock()
 
-        self.app.prepare(
-            ctx_id=0,
-            det_size=FACE_DET_SIZE
-        )
+    def _get_app(self):
+        if self._app is not None:
+            return self._app
+        with self._model_lock:
+            if self._app is None:
+                from insightface.app import FaceAnalysis
+
+                app = FaceAnalysis(
+                    name=FACE_MODEL_NAME,
+                    providers=FACE_PROVIDER,
+                )
+                app.prepare(ctx_id=0, det_size=FACE_DET_SIZE)
+                self._app = app
+        return self._app
 
     def get_license_embedding_path(self, user_id: int):
         """
@@ -36,7 +45,7 @@ class FaceService:
         예:
         db/users/1/license_embedding.npy
         """
-        return f"db/users/{user_id}/license_embedding.npy"
+        return get_license_embedding_path(user_id)
 
     def decode_base64_image(self, image_base64: str):
         """
@@ -94,7 +103,7 @@ class FaceService:
         if img is None:
             return None
 
-        faces = self.app.get(img)
+        faces = self._get_app().get(img)
 
         if len(faces) == 0:
             return None
@@ -138,20 +147,7 @@ class FaceService:
                 "reason": "face_not_detected"
             }
 
-        embedding_path = (
-            self.get_license_embedding_path(user_id)
-        )
-
-        # db/users/{user_id} 폴더가 없으면 자동 생성한다.
-        os.makedirs(
-            os.path.dirname(embedding_path),
-            exist_ok=True
-        )
-
-        np.save(
-            embedding_path,
-            embedding
-        )
+        embedding_path = embedding_store.save(user_id, embedding)
 
         print("[FACE] 면허증 얼굴 embedding 저장 완료")
         print(f"[FACE] user_id: {user_id}")
@@ -171,21 +167,15 @@ class FaceService:
         """
         현재 셀피와 사용자의 면허증 얼굴 embedding을 비교한다.
         """
-        embedding_path = (
-            self.get_license_embedding_path(user_id)
-        )
+        registered_embedding = embedding_store.load(user_id)
 
-        if not os.path.exists(embedding_path):
+        if registered_embedding is None:
             return {
                 "match": False,
                 "confidence": 0.0,
                 "face_vector": [],
                 "reason": "license_embedding_not_found"
             }
-
-        registered_embedding = np.load(
-            embedding_path
-        )
 
         img = self.decode_base64_image(
             image_base64
@@ -261,6 +251,13 @@ class FaceService:
             "reason": "success"
         }
 
+    def delete_face(self, user_id: int):
+        return {
+            "deleted": embedding_store.delete(user_id),
+            "user_id": user_id,
+            "reason": "success",
+        }
+
 
 face_service = FaceService()
 
@@ -288,3 +285,7 @@ def detect_face(image_base64: str):
     return face_service.detect_face(
         image_base64
     )
+
+
+def delete_face(user_id: int):
+    return face_service.delete_face(user_id)

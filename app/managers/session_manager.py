@@ -118,6 +118,10 @@ class SessionManager:
         return state.current_session["warning"]["count"]
 
     @staticmethod
+    def get_warning_reasons():
+        return list(state.current_session["warning"]["reasons"])
+
+    @staticmethod
     def get_stream_data():
         return {
             "face_score": state.current_session["sensor"]["face_score"],
