@@ -43,6 +43,14 @@ def start_session(request):
     }
 
 
+def start_weight_check(user_id: int) -> bool:
+    return safety_service.start_weight_check(user_id)
+
+
+def get_safety_state() -> str:
+    return safety_service.status()["safety_state"]
+
+
 async def stream_session():
     while SessionManager.is_active():
         event_data = SessionManager.get_stream_data()

@@ -38,6 +38,67 @@ Raspberry Pi 연결
 시험할 때는 기본값인 `USE_UART_MOCK=true`를 사용하고, 실제 연결 시
 `USE_UART_MOCK=false`와 `SERIAL_PORT=/dev/serial0`을 설정합니다.
 
+## 앱 연동 및 포트 설정
+
+### 개발 PC에서 UART mock으로 실행
+
+개발 PC에서 8000 포트를 다른 프로세스가 사용 중이면 8001 포트로 실행할 수
+있습니다. 다음 명령은 얼굴 API를 끄고 UART와 STM32 응답을 mock으로 실행합니다.
+
+```bash
+cd /home/jaywjd/project/safe-kick-raspi
+
+ENABLE_FACE_API=false \
+ENABLE_TEST_API=true \
+USE_UART_MOCK=true \
+./venv/bin/python -m uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8001
+```
+
+이 구성의 로컬 API 주소는 `http://127.0.0.1:8001`입니다. `127.0.0.1`로
+실행한 서버에는 같은 PC에서만 접근할 수 있으므로 실제 휴대폰 앱 연동용으로는
+사용할 수 없습니다.
+
+### 실제 Raspberry Pi와 STM32로 실행
+
+실제 장비에서는 외부 기기가 접근할 수 있도록 `0.0.0.0`에 바인딩하고,
+앱의 기본 설정과 동일한 8000 포트를 사용합니다.
+
+```bash
+cd /home/jaywjd/project/safe-kick-raspi
+
+ENABLE_FACE_API=true \
+ENABLE_TEST_API=false \
+USE_UART_MOCK=false \
+SERIAL_PORT=/dev/serial0 \
+./venv/bin/python -m uvicorn app.main:app \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+Safe Kick 앱의 `.env`에는 실제 Raspberry Pi 주소를 설정해야 합니다.
+
+```env
+EXPO_PUBLIC_RASPI_IP=100.72.72.77
+EXPO_PUBLIC_RASPI_API_BASE=http://100.72.72.77:8000
+```
+
+IP 주소와 포트는 실제 실행 중인 Raspberry Pi 서버와 반드시 일치해야 합니다.
+주소를 변경한 뒤에는 Expo 개발 서버를 재시작해야 새 환경변수가 앱 번들에
+반영됩니다.
+
+연결 확인에는 별도 `/health` 경로가 아니라 다음 API를 사용합니다.
+
+```bash
+curl http://100.72.72.77:8000/status
+```
+
+정상 응답에서 `stm32_connected`, `safety_state`, `is_locked` 값을 확인합니다.
+안전점검 중 음주 검사가 통과해 `safety_state`가 `waiting_rider`가 되면 앱은
+`POST /session/weight-check`를 호출하며, 무게 검사와 잠금 해제가 완료되면
+상태가 `monitoring`으로 바뀝니다.
+
 ## 백엔드 연동 전 테스트
 
 얼굴 인식과 백엔드를 제외한 라즈베리파이·STM32 흐름만 시험할 수 있습니다.
@@ -177,6 +238,7 @@ GET /status
 ```http
 POST /session/start
 GET /session/stream
+POST /session/weight-check
 POST /session/end
 GET /session/summary?session_id={id}
 ```

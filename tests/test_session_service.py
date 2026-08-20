@@ -45,6 +45,16 @@ class SessionServiceTest(unittest.TestCase):
         self.assertEqual(ended["data"]["backend_sync"]["status"], "sent")
         self.assertFalse(SessionManager.is_active())
 
+    def test_start_weight_check_delegates_to_safety_service(self) -> None:
+        with patch(
+            "app.services.session_service.safety_service.start_weight_check",
+            return_value=True,
+        ) as start_weight_check:
+            accepted = session_service.start_weight_check(7)
+
+        self.assertTrue(accepted)
+        start_weight_check.assert_called_once_with(7)
+
 
 if __name__ == "__main__":
     unittest.main()
