@@ -16,7 +16,7 @@ class SerialConfig:
 @dataclass(frozen=True)
 class AlcoholConfig:
     minimum_delta: int = 100
-    required_positive_samples: int = 5
+    required_positive_samples: int = 3
     minimum_sample_count: int = 8
 
 

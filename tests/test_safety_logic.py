@@ -1,7 +1,8 @@
 import unittest
 
+from app.safety.alcohol import AlcoholPolicy
 from app.safety.boarding import BoardingMonitor
-from app.safety.config import AppConfig, BoardingConfig, WeightConfig
+from app.safety.config import AlcoholConfig, AppConfig, BoardingConfig, WeightConfig
 from app.safety.controller import Controller, SystemState
 from app.safety.occupancy import OccupancyAction, OccupancyMonitor
 from app.safety.protocol import MessageType, MotorState, WeightReading, parse_line
@@ -16,6 +17,23 @@ class FakeClock:
 
 
 class SafetyLogicTest(unittest.TestCase):
+    def test_alcohol_requires_three_consecutive_positive_samples(self) -> None:
+        policy = AlcoholPolicy(AlcoholConfig())
+
+        nonconsecutive = policy.evaluate(
+            100,
+            [200, 210, 150, 220, 230, 150, 240, 150],
+        )
+        consecutive = policy.evaluate(
+            100,
+            [150, 200, 210, 220, 150, 150, 150, 150],
+        )
+
+        self.assertEqual(nonconsecutive.positive_samples, 5)
+        self.assertFalse(nonconsecutive.unsafe)
+        self.assertEqual(consecutive.positive_samples, 3)
+        self.assertTrue(consecutive.unsafe)
+
     def test_protocol_parses_weight(self) -> None:
         message = parse_line("FL:20.00 FR:20.00 RL:15.00 RR:10.00 TOTAL:65.00")
         self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
