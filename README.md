@@ -557,23 +557,13 @@ STM32 Nucleo-F411RE
 
 STM32는 MQ-3 알코올 센서, 무게 센서, 릴레이, LED, 부저 등의 하드웨어를 제어합니다.
 
-## SAFE-KICK alias 설정
+## `kickserial` 간단 설정
 
-라즈베리파이에서 자주 사용하는 서버 및 하드웨어 테스트 명령을 alias로
-등록할 수 있습니다. 프로젝트가 `~/safe-kick-raspi-team`에 설치되어 있다고
-가정합니다.
+프로젝트 경로가 `~/safe-kick-raspi-team`인 경우 다음 설정만 추가합니다.
 
-`~/.safe-kick-aliases` 파일을 생성하고 다음 내용을 입력합니다.
+`~/.safe-kick-aliases`:
 
 ```bash
-# SAFE-KICK 단축키
-alias sb='source ~/.bashrc && echo "설정 적용 완료"'
-
-alias kickenv='cd ~/safe-kick-raspi-team && source .venv/bin/activate'
-alias kickserver='cd ~/safe-kick-raspi-team && .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000'
-alias kicktest='cd ~/safe-kick-raspi-team && .venv/bin/python -m unittest discover -s tests -v'
-alias kickstatus='curl -sS http://127.0.0.1:8000/status'
-
 unalias kickserial 2>/dev/null
 
 kickserial() {
@@ -582,37 +572,26 @@ kickserial() {
 }
 ```
 
-`~/.bashrc` 맨 아래에는 alias 파일을 불러오는 한 줄을 추가합니다.
+`~/.bashrc` 맨 아래:
 
 ```bash
 source ~/.safe-kick-aliases
 ```
 
-문법을 검사한 뒤 현재 터미널에 적용합니다. 두 문법 검사 명령에서 아무것도
-출력되지 않으면 정상입니다.
-
 ```bash
-bash -n ~/.bashrc
-bash -n ~/.safe-kick-aliases
 source ~/.bashrc
+kickserial
 ```
-
-등록되는 명령은 다음과 같습니다.
-
-| 명령 | 기능 |
-|---|---|
-| `kickenv` | 프로젝트 폴더로 이동하고 Python 가상환경 활성화 |
-| `kickserver` | FastAPI 서버를 `0.0.0.0:8000`으로 실행 |
-| `kickstatus` | 로컬 `/status` API 조회 |
-| `kicktest` | Python 단위 테스트 실행 |
-| `kickserial` | STM32 UART 번호형 하드웨어 테스트 메뉴 실행 |
-| `sb` | `.bashrc` 설정 다시 적용 |
 
 ## STM32 하드웨어 개별 테스트
 
 > **안전 주의:** Uvicorn 서버와 `kickserial`은 같은 UART 포트를 동시에 사용할
 > 수 없습니다. 모터 시험 전에는 킥보드를 고정하고 구동 바퀴를 지면에서
 > 띄워야 합니다.
+
+실제 터미널 캡처를 포함한 원본 테스트 기록은
+[Notion 하드웨어 개별 테스트](https://www.notion.so/3c3e8d3fa9438151a82ce8506d277b61)에서
+확인할 수 있습니다.
 
 ### 1. 최신 테스트 메뉴 받기
 
@@ -624,8 +603,9 @@ git pull origin pjb-add-motor
 
 ### 2. 서버 종료 및 UART 점유 확인
 
-서버가 실행 중이면 안전을 위해 먼저 모터를 잠근 뒤 서버 터미널에서 `Ctrl+C`를
-누릅니다. 8000 포트가 비었는지 확인합니다.
+서버가 실행 중이면 Swagger에서 `POST /test/motor/lock`과
+`POST /session/end`를 실행한 뒤 서버 터미널에서 `Ctrl+C`를 누릅니다.
+8000 포트가 비었는지 확인합니다.
 
 ```bash
 ss -ltnp | grep ":8000"
@@ -683,14 +663,23 @@ FL:0.01 FR:-0.02 RL:0.00 RR:0.01 TOTAL:0.00
 WEIGHT_STREAM_OFF
 ```
 
+실제 시험에서 빈 발판은 `TOTAL:-0.04kg`, 2.5kg 아령은 `TOTAL:2.44kg`로
+측정됐으며, 하중 제거 후 0kg 근처 복귀와 `WEIGHT_STREAM_OFF`까지 확인했습니다.
+
+![로드셀 2.5kg 아령 테스트](docs/images/loadcell-test.png)
+
 ### 5. MQ-3 측정
 
 원시값 연속 확인은 `2`를 입력합니다.
 
 ```text
 MQ3_STREAM_ON
-MQ3:68
-MQ3:70
+MQ3:335
+MQ3:351
+MQ3:320
+MQ3:1459
+MQ3:2985
+MQ3:3897
 ```
 
 `3`을 입력하면 원시값 연속 측정이 중지됩니다. 실제 음주 판정용 기준값 및 표본
@@ -704,6 +693,11 @@ MQ3:70
 [END_MQ3]
 ```
 
+실제 시험에서는 낮은 원시값 구간에서 센서 반응 후 최대 `3897`까지 상승하는
+연속 표본을 확인했습니다.
+
+![MQ-3 원시값 연속 측정 테스트](docs/images/mq3-test.png)
+
 ### 6. 모터, L298N, 릴레이 및 부저 시험
 
 모터 시험 전 구동 바퀴가 지면에 닿지 않았는지 다시 확인합니다.
@@ -716,6 +710,23 @@ MQ3:70
 6. 약 2초 후 `5`를 입력해 `MOTOR:UNLOCKED SPEED:30`인지 확인합니다.
 7. `9`를 입력해 부저 정지와 속도 복구를 확인합니다.
 8. 시험이 끝나면 반드시 `6`을 입력해 릴레이와 모터 출력을 차단합니다.
+
+실제 테스트 결과:
+
+```text
+5 -> MOTOR:LOCKED SPEED:0
+7 -> UNLOCK_OK
+5 -> MOTOR:UNLOCKED SPEED:67
+5 -> MOTOR:UNLOCKED SPEED:70
+8 -> BUZZ_ON
+5 -> MOTOR:UNLOCKED SPEED:30
+9 -> BUZZ_OFF
+5 -> MOTOR:UNLOCKED SPEED:70
+6 -> LOCK_OK
+```
+
+점진 가속 중 속도 67을 거쳐 목표 속도 70에 도달했고, 경고 시 30으로 감속한 뒤
+경고 해제 시 70으로 복구되었습니다. 마지막 `LOCK` 응답까지 정상 확인했습니다.
 
 ### 7. 안전 종료
 
