@@ -68,14 +68,29 @@ USE_UART_MOCK=true \
 ```bash
 cd /home/jaywjd/project/safe-kick-raspi
 
-ENABLE_FACE_API=true \
-ENABLE_TEST_API=false \
-USE_UART_MOCK=false \
-SERIAL_PORT=/dev/serial0 \
 ./venv/bin/python -m uvicorn app.main:app \
   --host 0.0.0.0 \
   --port 8000
 ```
+
+실행 설정은 프로젝트 루트의 `.env`에서 관리합니다. 실제 STM32 연결 시:
+
+```env
+ENABLE_FACE_API=true
+ENABLE_TEST_API=false
+ALLOW_MANUAL_UNLOCK=false
+USE_UART_MOCK=false
+SERIAL_PORT=/dev/serial0
+BAUD_RATE=115200
+```
+
+처음 설정할 때는 `.env.example`을 복사한 뒤 장비 환경에 맞게 수정합니다.
+
+```bash
+cp .env.example .env
+```
+
+`.env`는 Git에서 제외되며, `.env.example`만 설정 템플릿으로 공유합니다.
 
 Safe Kick 앱의 `.env`에는 실제 Raspberry Pi 주소를 설정해야 합니다.
 
