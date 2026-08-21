@@ -19,6 +19,7 @@ class MessageType(Enum):
     WEIGHT_END = auto()
     LOCK_OK = auto()
     UNLOCK_OK = auto()
+    MOTOR_STATE = auto()
     FAULT = auto()
     ERROR = auto()
     UNKNOWN = auto()
@@ -34,15 +35,21 @@ class WeightReading:
 
 
 @dataclass(frozen=True)
+class MotorState:
+    unlocked: bool
+    speed_percent: int
+
+
+@dataclass(frozen=True)
 class Message:
     type: MessageType
     raw: str
-    value: int | str | WeightReading | None = None
+    value: int | str | WeightReading | MotorState | None = None
 
 
 COMMANDS = {
     "CHECK_MQ3", "TEST_MQ3", "STOP_TEST_MQ3", "CHECK_WEIGHT",
-    "STOP_WEIGHT", "BUZZ_ON", "BUZZ_OFF", "LOCK", "UNLOCK",
+    "STOP_WEIGHT", "BUZZ_ON", "BUZZ_OFF", "LOCK", "UNLOCK", "MOTOR_STATE",
 }
 
 _WEIGHT_PATTERN = re.compile(
@@ -51,6 +58,9 @@ _WEIGHT_PATTERN = re.compile(
     r"RL:(?P<rl>[+-]?\d+(?:\.\d+)?)\s+"
     r"RR:(?P<rr>[+-]?\d+(?:\.\d+)?)\s+"
     r"TOTAL:(?P<total>[+-]?\d+(?:\.\d+)?)"
+)
+_MOTOR_STATE_PATTERN = re.compile(
+    r"MOTOR:(?P<state>LOCKED|UNLOCKED)\s+SPEED:(?P<speed>\d+)"
 )
 
 
@@ -82,6 +92,17 @@ def parse_line(line: str) -> Message:
         return Message(MessageType.FAULT, raw, raw.removeprefix("FAULT:"))
     if raw.startswith("ERR:"):
         return Message(MessageType.ERROR, raw, raw.removeprefix("ERR:"))
+
+    motor_match = _MOTOR_STATE_PATTERN.fullmatch(raw)
+    if motor_match:
+        return Message(
+            MessageType.MOTOR_STATE,
+            raw,
+            MotorState(
+                unlocked=motor_match.group("state") == "UNLOCKED",
+                speed_percent=int(motor_match.group("speed")),
+            ),
+        )
 
     match = _WEIGHT_PATTERN.fullmatch(raw)
     if match:

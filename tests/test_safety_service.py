@@ -40,6 +40,18 @@ class SafetyServiceTest(unittest.TestCase):
         self.assertFalse(safety_service.authentication_completed(8))
         self.assertTrue(SessionManager.is_locked())
 
+    def test_motor_test_commands_with_uart_mock(self) -> None:
+        safety_service.start()
+
+        self.assertEqual(safety_service.send_motor_test_command("UNLOCK"), "accepted")
+        self.assertEqual(safety_service.send_motor_test_command("BUZZ_ON"), "accepted")
+        self.assertEqual(safety_service.send_motor_test_command("MOTOR_STATE"), "accepted")
+
+        motor_state = safety_service.status()["motor_state"]
+        self.assertEqual(motor_state, {"unlocked": True, "speed_percent": 30})
+
+        self.assertEqual(safety_service.send_motor_test_command("LOCK"), "accepted")
+
 
 if __name__ == "__main__":
     unittest.main()

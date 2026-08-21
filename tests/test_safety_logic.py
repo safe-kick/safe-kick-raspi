@@ -4,7 +4,7 @@ from app.safety.boarding import BoardingMonitor
 from app.safety.config import AppConfig, BoardingConfig, WeightConfig
 from app.safety.controller import Controller, SystemState
 from app.safety.occupancy import OccupancyAction, OccupancyMonitor
-from app.safety.protocol import MessageType, WeightReading, parse_line
+from app.safety.protocol import MessageType, MotorState, WeightReading, parse_line
 
 
 class FakeClock:
@@ -20,6 +20,11 @@ class SafetyLogicTest(unittest.TestCase):
         message = parse_line("FL:20.00 FR:20.00 RL:15.00 RR:10.00 TOTAL:65.00")
         self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
         self.assertEqual(message.value.total, 65.0)
+
+    def test_protocol_parses_motor_state(self) -> None:
+        message = parse_line("MOTOR:UNLOCKED SPEED:42")
+        self.assertEqual(message.type, MessageType.MOTOR_STATE)
+        self.assertEqual(message.value, MotorState(unlocked=True, speed_percent=42))
 
     def test_boarding_requires_three_stable_samples(self) -> None:
         monitor = BoardingMonitor(BoardingConfig())
