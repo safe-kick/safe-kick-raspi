@@ -778,3 +778,14 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 - 임베딩 파일 암호화 또는 접근 권한 강화
 - Node.js 서버와 운행 종료 요약 연동
 - 센서 및 얼굴 인증 통합 테스트
+## STM32 UART 개별 테스트 메뉴
+
+API 서버를 종료한 후 다음 명령으로 `0~9` 테스트 메뉴를 실행합니다.
+
+```bash
+.venv/bin/python tools/stm32_menu.py \
+  --port /dev/serial/by-id/usb-STMicroelectronics_STM32_STLink_066FFF505567494867085224-if01
+```
+
+`0`은 무게 측정 시작, `1`은 무게 측정 중지이며 나머지 번호는 실행 시
+표시되는 메뉴에서 확인합니다. `h`는 메뉴 다시 보기, `q`는 종료입니다.
