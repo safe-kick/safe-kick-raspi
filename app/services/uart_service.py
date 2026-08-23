@@ -27,6 +27,8 @@ class UARTService:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._logger = logging.getLogger(__name__)
+        self._mock_motor_unlocked = False
+        self._mock_motor_speed = 0
 
     @property
     def is_connected(self) -> bool:
@@ -114,9 +116,27 @@ class UARTService:
     def _emit_mock(self, command: str) -> None:
         if not self._line_handler:
             return
+        if command == "UNLOCK":
+            self._mock_motor_unlocked = True
+            self._mock_motor_speed = 70
+        elif command == "BUZZ_ON" and self._mock_motor_unlocked:
+            self._mock_motor_speed = 30
+        elif command == "BUZZ_OFF" and self._mock_motor_unlocked:
+            self._mock_motor_speed = 70
+        elif command == "LOCK":
+            self._mock_motor_unlocked = False
+            self._mock_motor_speed = 0
+
         responses = {
             "LOCK": ["LOCK_OK"],
             "UNLOCK": ["UNLOCK_OK"],
+            "MOTOR_STATE": [
+                "MOTOR:%s SPEED:%d"
+                % (
+                    "UNLOCKED" if self._mock_motor_unlocked else "LOCKED",
+                    self._mock_motor_speed,
+                )
+            ],
             "CHECK_MQ3": [
                 "[CHECK_MQ3]", "MQ3_BASELINE:600",
                 "MQ3:610", "MQ3:620", "MQ3:630", "MQ3:640",

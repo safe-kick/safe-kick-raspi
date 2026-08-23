@@ -27,7 +27,19 @@ class AlcoholPolicy:
                 "not enough samples",
             )
         positive_count = sum(delta >= self._config.minimum_delta for delta in deltas)
-        unsafe = positive_count >= self._config.required_positive_samples
+        consecutive_count = 0
+        max_consecutive_count = 0
+        for delta in deltas:
+            if delta >= self._config.minimum_delta:
+                consecutive_count += 1
+                max_consecutive_count = max(
+                    max_consecutive_count,
+                    consecutive_count,
+                )
+            else:
+                consecutive_count = 0
+
+        unsafe = max_consecutive_count >= self._config.required_positive_samples
         return AlcoholResult(
             unsafe, baseline, tuple(samples), positive_count, max(deltas, default=0),
             "alcohol detected" if unsafe else "within configured range",
