@@ -8,6 +8,7 @@ from app.services import face_service
 from app.managers.session_manager import SessionManager
 from app.services.safety_service import safety_service
 from app.services.face_attempt_service import face_attempt_service
+from app.services.helmet_service import helmet_service
 
 
 router = APIRouter()
@@ -106,6 +107,61 @@ def verify_face(
             if result["match"]
             else "얼굴 인증에 실패했습니다."
         )
+    }
+
+
+@router.post("/face/live-verify")
+def live_verify_face(request: FaceVerifyRequest):
+    """Verify face and helmet from one frame without recording retry failures."""
+    image = face_service.face_service.decode_base64_image(request.image)
+    if image is None:
+        face_result = {
+            "match": False,
+            "confidence": 0.0,
+            "reason": "invalid_image",
+        }
+        helmet_result = {
+            "helmet_verified": False,
+            "helmet_score": 0.0,
+            "helmet_class": None,
+            "reason": "invalid_image",
+        }
+    else:
+        face_result = face_service.face_service.verify_face_image(request.user_id, image)
+        helmet_result = helmet_service.verify_image(image)
+
+    face_verified = face_result["match"]
+    helmet_verified = helmet_result["helmet_verified"]
+    verified = face_verified and helmet_verified
+    safety_check_started = False
+
+    SessionManager.update_helmet_status(
+        helmet_verified,
+        helmet_result["helmet_score"],
+    )
+    if verified:
+        face_attempt_service.reset(request.user_id)
+        SessionManager.update_face_score(face_result["confidence"])
+        safety_check_started = safety_service.authentication_completed(request.user_id)
+
+    return {
+        "status": "success" if verified else "error",
+        "data": {
+            "verified": verified,
+            "face_verified": face_verified,
+            "face_score": face_result["confidence"],
+            "helmet_verified": helmet_verified,
+            "helmet_score": helmet_result["helmet_score"],
+            "helmet_class": helmet_result["helmet_class"],
+            "face_reason": face_result["reason"],
+            "helmet_reason": helmet_result["reason"],
+            "safety_check_started": safety_check_started,
+        },
+        "message": (
+            "얼굴 및 헬멧 인증이 완료되었습니다."
+            if verified
+            else "얼굴 또는 헬멧 인증에 실패했습니다."
+        ),
     }
 
 

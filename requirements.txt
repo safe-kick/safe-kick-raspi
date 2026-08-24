@@ -7,3 +7,4 @@ opencv-python-headless
 numpy
 requests
 python-dotenv
+inference-sdk>=1.5.0,<2.0.0

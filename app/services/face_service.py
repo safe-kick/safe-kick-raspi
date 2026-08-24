@@ -11,7 +11,7 @@ FACE_MODEL_NAME = "buffalo_sc"
 FACE_PROVIDER = ["CPUExecutionProvider"]
 FACE_DET_SIZE = (320, 320)
 
-REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.5"))
+REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.40"))
 
 
 def get_license_embedding_path(user_id: int):
@@ -189,9 +189,21 @@ class FaceService:
                 "reason": "invalid_image"
             }
 
-        current_embedding = (
-            self.extract_embedding(img)
-        )
+        return self.verify_face_image(user_id, img, registered_embedding)
+
+    def verify_face_image(self, user_id: int, img, registered_embedding=None):
+        """Compare an already-decoded frame with the stored license embedding."""
+        if registered_embedding is None:
+            registered_embedding = embedding_store.load(user_id)
+        if registered_embedding is None:
+            return {
+                "match": False,
+                "confidence": 0.0,
+                "face_vector": [],
+                "reason": "license_embedding_not_found"
+            }
+
+        current_embedding = self.extract_embedding(img)
 
         if current_embedding is None:
             return {

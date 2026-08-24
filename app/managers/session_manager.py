@@ -12,6 +12,9 @@ class SessionManager:
         state.current_session["device"]["is_locked"] = True
         state.current_session["device"]["status"] = "waiting_auth"
 
+        state.current_session["sensor"]["helmet_verified"] = False
+        state.current_session["sensor"]["helmet_score"] = 0.0
+
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["count"] = 0
         state.current_session["warning"]["reasons"] = []
@@ -27,6 +30,9 @@ class SessionManager:
         state.current_session["session"]["session_id"] = None
         state.current_session["session"]["kickboard_id"] = None
         state.current_session["session"]["user_id"] = None
+
+        state.current_session["sensor"]["helmet_verified"] = False
+        state.current_session["sensor"]["helmet_score"] = 0.0
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["is_two_person"] = False
@@ -90,6 +96,11 @@ class SessionManager:
         state.current_session["sensor"]["face_score"] = score
 
     @staticmethod
+    def update_helmet_status(verified: bool, score: float):
+        state.current_session["sensor"]["helmet_verified"] = verified
+        state.current_session["sensor"]["helmet_score"] = score
+
+    @staticmethod
     def update_weight(weight: float):
         state.current_session["sensor"]["weight"] = weight
 
@@ -125,6 +136,8 @@ class SessionManager:
     def get_stream_data():
         return {
             "face_score": state.current_session["sensor"]["face_score"],
+            "helmet_verified": state.current_session["sensor"]["helmet_verified"],
+            "helmet_score": state.current_session["sensor"]["helmet_score"],
             "weight": state.current_session["sensor"]["weight"],
             "gas": state.current_session["sensor"]["gas"],
             "is_two_person": state.current_session["warning"]["is_two_person"],
@@ -144,6 +157,8 @@ class SessionManager:
     def get_sensor_data():
         return {
             "face_score": state.current_session["sensor"]["face_score"],
+            "helmet_verified": state.current_session["sensor"]["helmet_verified"],
+            "helmet_score": state.current_session["sensor"]["helmet_score"],
             "weight": state.current_session["sensor"]["weight"],
             "gas": state.current_session["sensor"]["gas"],
         }

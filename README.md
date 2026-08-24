@@ -12,6 +12,7 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - STM32 UART 통신
 - 운전면허증 얼굴 등록
 - 셀피 얼굴 인증
+- 실시간 얼굴·자전거 헬멧 통합 인증
 - 사용자별 얼굴 임베딩 저장
 - 앱 인증 이후 STM32 안전 절차 자동 실행
 - 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
@@ -94,6 +95,22 @@ cp .env.example .env
 ```
 
 `.env`는 Git에서 제외되며, `.env.example`만 설정 템플릿으로 공유합니다.
+
+실시간 얼굴·헬멧 인증에는 다음 설정이 필요합니다. Roboflow API key는 저장소에
+커밋하지 말고 실제 장비의 `.env`에만 입력합니다.
+
+```env
+FACE_MATCH_THRESHOLD=0.40
+ROBOFLOW_API_KEY=
+ROBOFLOW_HELMET_MODEL_ID=bike-helmet-detection-2vdjo-mqa2s/1
+HELMET_CONFIDENCE_THRESHOLD=0.50
+```
+
+Python 의존성은 다음 명령으로 설치합니다.
+
+```bash
+python3 -m pip install -r requirements.txt
+```
 
 Safe Kick 앱의 `.env`에는 실제 Raspberry Pi 주소를 설정해야 합니다.
 
@@ -290,6 +307,42 @@ POST /unlock
 ---
 
 ## Face
+
+### 실시간 얼굴·헬멧 인증
+
+```http
+POST /face/live-verify
+Content-Type: application/json
+```
+
+```json
+{
+  "user_id": 1,
+  "image": "data:image/jpeg;base64,/9j/4AAQ..."
+}
+```
+
+한 프레임에서 저장된 면허증 임베딩과 현재 얼굴을 비교하고 Roboflow 모델로
+헬멧을 확인합니다. 얼굴과 헬멧이 모두 통과한 경우에만 기존 STM32 안전 점검을
+시작합니다. 프레임 실패는 수동 `/face/verify`의 재시도 횟수에 포함되지 않습니다.
+
+```json
+{
+  "status": "success",
+  "data": {
+    "verified": true,
+    "face_verified": true,
+    "face_score": 0.429,
+    "helmet_verified": true,
+    "helmet_score": 0.9203,
+    "helmet_class": "With Helmet",
+    "face_reason": "success",
+    "helmet_reason": "success",
+    "safety_check_started": true
+  },
+  "message": "얼굴 및 헬멧 인증이 완료되었습니다."
+}
+```
 
 ### 면허증 얼굴 등록
 
