@@ -100,10 +100,12 @@ cp .env.example .env
 커밋하지 말고 실제 장비의 `.env`에만 입력합니다.
 
 ```env
-FACE_MATCH_THRESHOLD=0.40
+FACE_MATCH_THRESHOLD=0.45
 ROBOFLOW_API_KEY=
-ROBOFLOW_HELMET_MODEL_ID=bike-helmet-detection-2vdjo-mqa2s/1
-HELMET_CONFIDENCE_THRESHOLD=0.50
+ROBOFLOW_HELMET_MODEL_ID=helmet-srsz5/2
+HELMET_WITH_CONFIDENCE=0.90
+HELMET_WITHOUT_MAX_CONFIDENCE=0.50
+HELMET_INFERENCE_TIMEOUT_SECONDS=30
 ```
 
 Python 의존성은 다음 명령으로 설치합니다.
@@ -325,6 +327,53 @@ Content-Type: application/json
 한 프레임에서 저장된 면허증 임베딩과 현재 얼굴을 비교하고 Roboflow 모델로
 헬멧을 확인합니다. 얼굴과 헬멧이 모두 통과한 경우에만 기존 STM32 안전 점검을
 시작합니다. 프레임 실패는 수동 `/face/verify`의 재시도 횟수에 포함되지 않습니다.
+통합 인증의 PASS와 FAIL은 모두 HTTP 200으로 반환하며, 앱은 응답의
+`data.verified`, `data.face_verified`, `data.helmet_verified`로 현재 프레임의
+판정 상태를 갱신해야 합니다. 실제 API 접근 권한 오류는 별도의 HTTP 401입니다.
+
+헬멧 판정에는 Roboflow Universe의 `project-pdvie/helmet-srsz5` 프로젝트에서
+배포한 `helmet-srsz5/2`만 사용합니다. `With Helmet` confidence가 0.90 이상이고
+동시에 `Without Helmet` confidence가 0.50 이하일 때만 통과합니다. API 오류나
+30초 timeout은 모두 안전한 실패로 처리됩니다.
+
+로컬 사진 두 장으로 전체 과정을 테스트하려면 다음 위치에 사진을 둡니다.
+`test/private/` 디렉터리는 Git에서 제외되므로 면허증과 얼굴 사진은 커밋되지
+않습니다.
+
+면허증 사진이 옆이나 거꾸로 촬영된 경우 얼굴 검출은 원본, 90도, 180도,
+270도 방향을 순서대로 자동 시도합니다.
+
+```text
+test/private/license.jpg  # 면허증 사진
+test/private/helmet.jpg   # 헬멧을 착용한 현재 얼굴 사진
+```
+
+서버를 실행한 상태에서 테스트 스크립트를 호출합니다.
+
+```bash
+mkdir -p test/private
+./venv/bin/python scripts/test_live_face_helmet.py --user-id 1
+```
+
+STM32 mock을 포함해 기존 안전 점검 시작까지 확인하려면 테스트 세션 옵션을
+추가합니다.
+
+```bash
+./venv/bin/python scripts/test_live_face_helmet.py \
+  --user-id 1 \
+  --start-session
+```
+
+사진 위치나 서버 주소가 다르면 `--license-image`, `--helmet-image`, `--server`
+옵션으로 지정할 수 있습니다. 스크립트는 사진 원본이나 Base64 데이터를 파일로
+저장하지 않고 실행 중인 API로만 전송합니다.
+
+인증 요청마다 서버 로그에는 이미지나 얼굴 벡터 없이 얼굴·헬멧 점수, 적용된
+임계값과 최종 통과 여부가 다음 형식으로 기록됩니다.
+
+```text
+Live verification user_id=1 face_score=67.20% face_threshold=45.00% face_passed=True ... helmet_score=92.03% helmet_threshold=90.00% helmet_passed=True ... verified=True
+```
 
 ```json
 {
@@ -520,7 +569,7 @@ POST /face/verify
 ```env
 FACE_MAX_VERIFY_ATTEMPTS=3
 FACE_VERIFY_LOCKOUT_SECONDS=300
-FACE_MATCH_THRESHOLD=0.5
+FACE_MATCH_THRESHOLD=0.45
 ```
 
 제한 중인 응답에는 `reason=retry_limit_exceeded`, `failed_attempts`,

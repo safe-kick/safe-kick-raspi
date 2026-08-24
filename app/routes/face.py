@@ -1,7 +1,8 @@
 import hmac
+import logging
 import os
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from app.services import face_service
@@ -12,6 +13,7 @@ from app.services.helmet_service import helmet_service
 
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
 
 
 class FaceRegisterRequest(BaseModel):
@@ -80,6 +82,14 @@ def verify_face(
         request.user_id,
         request.image
     )
+    logger.info(
+        "Face verification user_id=%s score=%.2f%% threshold=%.2f%% passed=%s reason=%s",
+        request.user_id,
+        result["confidence"] * 100,
+        face_service.REGISTERED_MATCH_THRESHOLD * 100,
+        result["match"],
+        result["reason"],
+    )
 
     if result["match"]:
         face_attempt_service.reset(request.user_id)
@@ -111,7 +121,7 @@ def verify_face(
 
 
 @router.post("/face/live-verify")
-def live_verify_face(request: FaceVerifyRequest):
+def live_verify_face(request: FaceVerifyRequest, response: Response):
     """Verify face and helmet from one frame without recording retry failures."""
     image = face_service.face_service.decode_base64_image(request.image)
     if image is None:
@@ -125,6 +135,11 @@ def live_verify_face(request: FaceVerifyRequest):
             "helmet_score": 0.0,
             "helmet_class": None,
             "reason": "invalid_image",
+            "helmet_ok": False,
+            "detected_class": None,
+            "confidence": None,
+            "helmet_bbox": None,
+            "without_helmet_score": 0.0,
         }
     else:
         face_result = face_service.face_service.verify_face_image(request.user_id, image)
@@ -134,6 +149,22 @@ def live_verify_face(request: FaceVerifyRequest):
     helmet_verified = helmet_result["helmet_verified"]
     verified = face_verified and helmet_verified
     safety_check_started = False
+
+    helmet_threshold = helmet_service.confidence_threshold()
+    logger.info("[LIVE] ========== verification ==========")
+    logger.info("[LIVE] user_id=%s", request.user_id)
+    logger.info("[LIVE] face_score=%.2f%%", face_result["confidence"] * 100)
+    logger.info("[LIVE] face_threshold=%.2f%%", face_service.REGISTERED_MATCH_THRESHOLD * 100)
+    logger.info("[LIVE] face_passed=%s", face_verified)
+    logger.info("[LIVE] face_reason=%s", face_result["reason"])
+    logger.info("[LIVE] helmet_score=%.2f%%", helmet_result["helmet_score"] * 100)
+    logger.info("[LIVE] without_helmet_score=%.2f%%", helmet_result["without_helmet_score"] * 100)
+    logger.info("[LIVE] helmet_threshold=%.2f%%", helmet_threshold * 100)
+    logger.info("[LIVE] without_helmet_max=%.2f%%", helmet_service.without_helmet_max_confidence() * 100)
+    logger.info("[LIVE] helmet_passed=%s", helmet_verified)
+    logger.info("[LIVE] helmet_reason=%s", helmet_result["reason"])
+    logger.info("[LIVE] verified=%s", verified)
+    logger.info("[LIVE] ==================================")
 
     SessionManager.update_helmet_status(
         helmet_verified,
@@ -153,6 +184,11 @@ def live_verify_face(request: FaceVerifyRequest):
             "helmet_verified": helmet_verified,
             "helmet_score": helmet_result["helmet_score"],
             "helmet_class": helmet_result["helmet_class"],
+            "helmet_ok": helmet_result["helmet_ok"],
+            "detected_class": helmet_result["detected_class"],
+            "confidence": helmet_result["confidence"],
+            "helmet_bbox": helmet_result["helmet_bbox"],
+            "without_helmet_score": helmet_result["without_helmet_score"],
             "face_reason": face_result["reason"],
             "helmet_reason": helmet_result["reason"],
             "safety_check_started": safety_check_started,

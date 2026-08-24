@@ -11,7 +11,7 @@ FACE_MODEL_NAME = "buffalo_sc"
 FACE_PROVIDER = ["CPUExecutionProvider"]
 FACE_DET_SIZE = (320, 320)
 
-REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.40"))
+REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.45"))
 
 
 def get_license_embedding_path(user_id: int):
@@ -98,25 +98,36 @@ class FaceService:
         이미지에서 얼굴을 검출하고 embedding을 반환한다.
 
         얼굴이 여러 명이면 가장 큰 얼굴을 사용한다.
+        원본 방향에서 검출되지 않으면 90도 단위로 회전해 다시 시도한다.
         얼굴을 찾지 못하면 None을 반환한다.
         """
         if img is None:
             return None
 
-        faces = self._get_app().get(img)
-
-        if len(faces) == 0:
-            return None
-
-        face = max(
-            faces,
-            key=lambda f: (
-                (f.bbox[2] - f.bbox[0]) *
-                (f.bbox[3] - f.bbox[1])
-            )
+        rotations = (
+            (0, None),
+            (90, cv2.ROTATE_90_CLOCKWISE),
+            (180, cv2.ROTATE_180),
+            (270, cv2.ROTATE_90_COUNTERCLOCKWISE),
         )
+        for angle, rotation_code in rotations:
+            candidate = img if rotation_code is None else cv2.rotate(img, rotation_code)
+            faces = self._get_app().get(candidate)
+            if len(faces) == 0:
+                continue
 
-        return face.embedding
+            face = max(
+                faces,
+                key=lambda f: (
+                    (f.bbox[2] - f.bbox[0]) *
+                    (f.bbox[3] - f.bbox[1])
+                )
+            )
+            if angle:
+                print(f"[FACE] 얼굴 검출을 위해 이미지를 {angle}도 회전했습니다.")
+            return face.embedding
+
+        return None
 
     def register_face(
         self,
