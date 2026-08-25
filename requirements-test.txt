@@ -1,3 +1,6 @@
 fastapi
 uvicorn
 pyserial
+python-dotenv
+numpy
+opencv-python-headless

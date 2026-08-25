@@ -12,6 +12,7 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - STM32 UART 통신
 - 운전면허증 얼굴 등록
 - 셀피 얼굴 인증
+- 실시간 얼굴·자전거 헬멧 통합 인증
 - 사용자별 얼굴 임베딩 저장
 - 앱 인증 이후 STM32 안전 절차 자동 실행
 - 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
@@ -38,6 +39,105 @@ Raspberry Pi 연결
 시험할 때는 기본값인 `USE_UART_MOCK=true`를 사용하고, 실제 연결 시
 `USE_UART_MOCK=false`와 `SERIAL_PORT=/dev/serial0`을 설정합니다.
 
+## 앱 연동 및 포트 설정
+
+### 개발 PC에서 UART mock으로 실행
+
+개발 PC에서 8000 포트를 다른 프로세스가 사용 중이면 8001 포트로 실행할 수
+있습니다. `.env`에서 얼굴 API를 끄고 UART와 STM32 응답을 mock으로 설정합니다.
+
+```env
+ENABLE_FACE_API=false
+ENABLE_TEST_API=true
+USE_UART_MOCK=true
+```
+
+```bash
+cd /home/jaywjd/project/safe-kick-raspi
+
+./venv/bin/python -m uvicorn app.main:app \
+  --host 127.0.0.1 \
+  --port 8001
+```
+
+이 구성의 로컬 API 주소는 `http://127.0.0.1:8001`입니다. `127.0.0.1`로
+실행한 서버에는 같은 PC에서만 접근할 수 있으므로 실제 휴대폰 앱 연동용으로는
+사용할 수 없습니다.
+
+### 실제 Raspberry Pi와 STM32로 실행
+
+실제 장비에서는 외부 기기가 접근할 수 있도록 `0.0.0.0`에 바인딩하고,
+앱의 기본 설정과 동일한 8000 포트를 사용합니다.
+
+```bash
+cd /home/jaywjd/project/safe-kick-raspi
+
+./venv/bin/python -m uvicorn app.main:app \
+  --host 0.0.0.0 \
+  --port 8000
+```
+
+실행 설정은 프로젝트 루트의 `.env`에서 관리합니다. 실제 STM32 연결 시:
+
+```env
+ENABLE_FACE_API=true
+ENABLE_TEST_API=false
+ALLOW_MANUAL_UNLOCK=false
+USE_UART_MOCK=false
+SERIAL_PORT=/dev/serial0
+BAUD_RATE=115200
+```
+
+처음 설정할 때는 `.env.example`을 복사한 뒤 장비 환경에 맞게 수정합니다.
+
+```bash
+cp .env.example .env
+```
+
+`.env`는 Git에서 제외되며, `.env.example`만 설정 템플릿으로 공유합니다.
+
+실시간 얼굴·헬멧 인증에는 다음 설정이 필요합니다. Roboflow API key는 저장소에
+커밋하지 말고 실제 장비의 `.env`에만 입력합니다.
+
+```env
+FACE_MATCH_THRESHOLD=0.30
+ROBOFLOW_API_KEY=
+ROBOFLOW_HELMET_WORKSPACE=8-_-_1-_
+ROBOFLOW_HELMET_WORKFLOW_ID=helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic
+HELMET_DEBUG_RESPONSE=false
+HELMET_WITH_CONFIDENCE=0.90
+HELMET_WITHOUT_MAX_CONFIDENCE=0.50
+HELMET_INFERENCE_TIMEOUT_SECONDS=30
+```
+
+Python 의존성은 다음 명령으로 설치합니다.
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Safe Kick 앱의 `.env`에는 실제 Raspberry Pi 주소를 설정해야 합니다.
+
+```env
+EXPO_PUBLIC_RASPI_IP=100.72.72.77
+EXPO_PUBLIC_RASPI_API_BASE=http://100.72.72.77:8000
+```
+
+IP 주소와 포트는 실제 실행 중인 Raspberry Pi 서버와 반드시 일치해야 합니다.
+주소를 변경한 뒤에는 Expo 개발 서버를 재시작해야 새 환경변수가 앱 번들에
+반영됩니다.
+
+연결 확인에는 별도 `/health` 경로가 아니라 다음 API를 사용합니다.
+
+```bash
+curl http://100.72.72.77:8000/status
+```
+
+정상 응답에서 `stm32_connected`, `safety_state`, `is_locked` 값을 확인합니다.
+안전점검 중 음주 검사가 통과해 `safety_state`가 `waiting_rider`가 되면 앱은
+`POST /session/weight-check`를 호출하며, 무게 검사와 잠금 해제가 완료되면
+상태가 `monitoring`으로 바뀝니다.
+
 ## 백엔드 연동 전 테스트
 
 얼굴 인식과 백엔드를 제외한 라즈베리파이·STM32 흐름만 시험할 수 있습니다.
@@ -45,9 +145,11 @@ Raspberry Pi 연결
 
 ```bash
 python3 -m pip install -r requirements-test.txt
-ENABLE_FACE_API=false ENABLE_TEST_API=true USE_UART_MOCK=true \
-  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+이 테스트를 실행할 때는 `.env`에서 `ENABLE_FACE_API=false`,
+`ENABLE_TEST_API=true`, `USE_UART_MOCK=true`로 설정합니다.
 
 다른 터미널에서 세션을 만들고 인증 완료 이벤트를 전달합니다.
 
@@ -67,8 +169,14 @@ curl -X POST http://127.0.0.1:8000/test/weight-check \
 curl http://127.0.0.1:8000/status
 ```
 
-실제 STM32 테스트에서는 서버 실행 명령의 `USE_UART_MOCK=true`를
-`USE_UART_MOCK=false SERIAL_PORT=/dev/serial0`으로 변경합니다.
+실제 STM32 테스트에서는 `.env`의 `USE_UART_MOCK=false`,
+`SERIAL_PORT=/dev/serial0` 설정을 사용합니다.
+
+전체 자동 테스트는 다음 명령으로 실행합니다.
+
+```bash
+python3 -m unittest discover -s tests -v
+```
 
 ---
 
@@ -171,6 +279,7 @@ GET /status
 ```http
 POST /session/start
 GET /session/stream
+POST /session/weight-check
 POST /session/end
 GET /session/summary?session_id={id}
 ```
@@ -202,6 +311,89 @@ POST /unlock
 ---
 
 ## Face
+
+### 실시간 얼굴·헬멧 인증
+
+```http
+POST /face/live-verify
+Content-Type: application/json
+```
+
+```json
+{
+  "user_id": 1,
+  "image": "data:image/jpeg;base64,/9j/4AAQ..."
+}
+```
+
+한 프레임에서 저장된 면허증 임베딩과 현재 얼굴을 비교하고 Roboflow 모델로
+헬멧을 확인합니다. 얼굴과 헬멧이 모두 통과한 경우에만 기존 STM32 안전 점검을
+시작합니다. 프레임 실패는 수동 `/face/verify`의 재시도 횟수에 포함되지 않습니다.
+통합 인증의 PASS와 FAIL은 모두 HTTP 200으로 반환하며, 앱은 응답의
+`data.verified`, `data.face_verified`, `data.helmet_verified`로 현재 프레임의
+판정 상태를 갱신해야 합니다. 실제 API 접근 권한 오류는 별도의 HTTP 401입니다.
+
+헬멧 판정에는 Roboflow Hosted Workflow
+`helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic`을 사용합니다. `With Helmet` confidence가 0.90 이상이고
+동시에 `Without Helmet` confidence가 0.50 이하일 때만 통과합니다. API 오류나
+30초 timeout은 모두 안전한 실패로 처리됩니다.
+
+로컬 사진 두 장으로 전체 과정을 테스트하려면 다음 위치에 사진을 둡니다.
+`test/private/` 디렉터리는 Git에서 제외되므로 면허증과 얼굴 사진은 커밋되지
+않습니다.
+
+면허증 사진이 옆이나 거꾸로 촬영된 경우 얼굴 검출은 원본, 90도, 180도,
+270도 방향을 순서대로 자동 시도합니다.
+
+```text
+test/private/license.jpg  # 면허증 사진
+test/private/helmet.jpg   # 헬멧을 착용한 현재 얼굴 사진
+```
+
+서버를 실행한 상태에서 테스트 스크립트를 호출합니다.
+
+```bash
+mkdir -p test/private
+./venv/bin/python scripts/test_live_face_helmet.py --user-id 1
+```
+
+STM32 mock을 포함해 기존 안전 점검 시작까지 확인하려면 테스트 세션 옵션을
+추가합니다.
+
+```bash
+./venv/bin/python scripts/test_live_face_helmet.py \
+  --user-id 1 \
+  --start-session
+```
+
+사진 위치나 서버 주소가 다르면 `--license-image`, `--helmet-image`, `--server`
+옵션으로 지정할 수 있습니다. 스크립트는 사진 원본이나 Base64 데이터를 파일로
+저장하지 않고 실행 중인 API로만 전송합니다.
+
+인증 요청마다 서버 로그에는 이미지나 얼굴 벡터 없이 얼굴·헬멧 점수, 적용된
+임계값과 최종 통과 여부가 다음 형식으로 기록됩니다.
+
+```text
+Live verification user_id=1 face_score=67.20% face_threshold=30.00% face_passed=True ... helmet_score=92.03% helmet_threshold=90.00% helmet_passed=True ... verified=True
+```
+
+```json
+{
+  "status": "success",
+  "data": {
+    "verified": true,
+    "face_verified": true,
+    "face_score": 0.429,
+    "helmet_verified": true,
+    "helmet_score": 0.9203,
+    "helmet_class": "With Helmet",
+    "face_reason": "success",
+    "helmet_reason": "success",
+    "safety_check_started": true
+  },
+  "message": "얼굴 및 헬멧 인증이 완료되었습니다."
+}
+```
 
 ### 면허증 얼굴 등록
 
@@ -371,6 +563,39 @@ POST /face/verify
 
 얼굴 인증에 성공하면 유사도 점수가 `SessionManager`에 저장됩니다.
 
+### 얼굴 인증 재시도 제한
+
+얼굴 인증 실패 횟수는 SQLite에 저장되며 기본 3회 실패 시 5분 동안 해당
+사용자의 인증을 차단합니다. 성공하거나 잠금 시간이 끝나면 횟수가 초기화됩니다.
+
+```env
+FACE_MAX_VERIFY_ATTEMPTS=3
+FACE_VERIFY_LOCKOUT_SECONDS=300
+FACE_MATCH_THRESHOLD=0.30
+```
+
+제한 중인 응답에는 `reason=retry_limit_exceeded`, `failed_attempts`,
+`attempts_remaining`, `retry_after_seconds`가 포함됩니다.
+
+### 사용자 탈퇴 시 임베딩 삭제
+
+Node.js 백엔드는 사용자 탈퇴 처리 중 다음 내부 API를 호출합니다.
+
+```http
+DELETE /face/embedding/{user_id}
+X-Internal-Api-Key: {INTERNAL_API_KEY}
+```
+
+서버 실행 전에 충분히 긴 내부 API 키를 설정해야 합니다.
+
+```env
+INTERNAL_API_KEY=replace-with-a-long-random-secret
+```
+
+임베딩 디렉터리는 소유자만 접근 가능한 `0700`, 파일은 `0600` 권한으로
+원자적으로 저장됩니다. 저장 위치는 필요할 때 `FACE_EMBEDDING_DIR`로 변경할 수
+있습니다.
+
 ---
 
 # 🤖 얼굴 인식 설정
@@ -476,6 +701,203 @@ STM32 Nucleo-F411RE
 
 STM32는 MQ-3 알코올 센서, 무게 센서, 릴레이, LED, 부저 등의 하드웨어를 제어합니다.
 
+## `kickserial` 간단 설정
+
+프로젝트 경로가 `~/safe-kick-raspi-team`인 경우 다음 설정만 추가합니다.
+
+`~/.safe-kick-aliases`:
+
+```bash
+unalias kickserial 2>/dev/null
+
+kickserial() {
+    cd ~/safe-kick-raspi-team || return
+    .venv/bin/python tools/stm32_menu.py --port /dev/serial/by-id/usb-STMicroelectronics_STM32_STLink_066FFF505567494867085224-if01
+}
+```
+
+`~/.bashrc` 맨 아래:
+
+```bash
+source ~/.safe-kick-aliases
+```
+
+```bash
+source ~/.bashrc
+kickserial
+```
+
+## STM32 하드웨어 개별 테스트
+
+> **안전 주의:** Uvicorn 서버와 `kickserial`은 같은 UART 포트를 동시에 사용할
+> 수 없습니다. 모터 시험 전에는 킥보드를 고정하고 구동 바퀴를 지면에서
+> 띄워야 합니다.
+
+실제 터미널 캡처를 포함한 원본 테스트 기록은
+[Notion 하드웨어 개별 테스트](https://www.notion.so/3c3e8d3fa9438151a82ce8506d277b61)에서
+확인할 수 있습니다.
+
+### 1. 최신 테스트 메뉴 받기
+
+```bash
+cd ~/safe-kick-raspi-team
+git switch pjb-add-motor
+git pull origin pjb-add-motor
+```
+
+### 2. 서버 종료 및 UART 점유 확인
+
+서버가 실행 중이면 Swagger에서 `POST /test/motor/lock`과
+`POST /session/end`를 실행한 뒤 서버 터미널에서 `Ctrl+C`를 누릅니다.
+8000 포트가 비었는지 확인합니다.
+
+```bash
+ss -ltnp | grep ":8000"
+```
+
+출력이 없으면 서버가 종료된 상태입니다.
+
+### 3. 번호 메뉴 실행
+
+```bash
+kickserial
+```
+
+| 입력 | 기능 | STM32 UART 명령 |
+|---:|---|---|
+| `0` | 무게 측정 시작 | `CHECK_WEIGHT` |
+| `1` | 무게 측정 중지 | `STOP_WEIGHT` |
+| `2` | MQ-3 원시값 연속 측정 시작 | `TEST_MQ3` |
+| `3` | MQ-3 원시값 연속 측정 중지 | `STOP_TEST_MQ3` |
+| `4` | MQ-3 음주 판정 시퀀스 실행 | `CHECK_MQ3` |
+| `5` | 모터 상태 확인 | `MOTOR_STATE` |
+| `6` | 모터 잠금 및 릴레이 차단 | `LOCK` |
+| `7` | 모터 잠금 해제 및 점진 가속 | `UNLOCK` |
+| `8` | 부저 켜기 및 모터 감속 | `BUZZ_ON` |
+| `9` | 부저 끄기 및 모터 속도 복구 | `BUZZ_OFF` |
+| `h` | 메뉴 다시 표시 | - |
+| `q` | UART 메뉴 종료 | - |
+
+STM32 RESET 버튼을 누른 후 발판을 완전히 비워 둡니다. 다음 메시지가 나올 때까지
+로드셀이나 발판을 건드리지 않습니다.
+
+```text
+Tare...
+READY
+```
+
+### 4. 로드셀 측정
+
+`0`을 입력하면 약 1초 간격으로 네 채널과 합산 무게가 출력됩니다.
+
+```text
+FL:0.01 FR:-0.02 RL:0.00 RR:0.01 TOTAL:0.00
+```
+
+1. 빈 발판에서 각 채널이 약 -1~1kg, `TOTAL`이 약 -2~2kg인지 확인합니다.
+2. 2.5kg 아령을 FL, FR, RL, RR 위치에 차례로 올립니다.
+3. 각 위치의 채널이 양수로 증가하고 `TOTAL`이 약 2.5kg인지 확인합니다.
+4. 아령을 내렸을 때 `TOTAL`이 0kg 근처로 돌아오는지 확인합니다.
+5. `1`을 입력해 연속 측정을 중지합니다.
+
+정상 종료 응답 예시:
+
+```text
+[END_WEIGHT]
+WEIGHT_STREAM_OFF
+```
+
+실제 시험에서 빈 발판은 `TOTAL:-0.04kg`, 2.5kg 아령은 `TOTAL:2.44kg`로
+측정됐으며, 하중 제거 후 0kg 근처 복귀와 `WEIGHT_STREAM_OFF`까지 확인했습니다.
+
+![로드셀 2.5kg 아령 테스트](docs/images/loadcell-test.png)
+
+### 5. MQ-3 측정
+
+원시값 연속 확인은 `2`를 입력합니다.
+
+```text
+MQ3_STREAM_ON
+MQ3:335
+MQ3:351
+MQ3:320
+MQ3:1459
+MQ3:2985
+MQ3:3897
+```
+
+`3`을 입력하면 원시값 연속 측정이 중지됩니다. 실제 음주 판정용 기준값 및 표본
+측정은 `4`를 입력합니다.
+
+```text
+[CHECK_MQ3]
+MQ3_BASELINE:67
+MQ3:68
+MQ3:70
+[END_MQ3]
+```
+
+판정에는 총 8개 샘플을 사용하며, `sample - baseline >= 100`인 값이 3회 연속
+발생하면 음주 감지로 처리합니다.
+
+실제 시험에서는 낮은 원시값 구간에서 센서 반응 후 최대 `3897`까지 상승하는
+연속 표본을 확인했습니다.
+
+![MQ-3 원시값 연속 측정 테스트](docs/images/mq3-test.png)
+
+### 6. 모터, L298N, 릴레이 및 부저 시험
+
+모터 시험 전 구동 바퀴가 지면에 닿지 않았는지 다시 확인합니다.
+
+1. `6`을 입력해 잠금 상태로 시작합니다.
+2. `5`를 입력해 `MOTOR:LOCKED SPEED:0`인지 확인합니다.
+3. `7`을 입력해 잠금을 해제하고 점진 가속을 확인합니다.
+4. 약 4초 후 `5`를 입력해 `MOTOR:UNLOCKED SPEED:70`인지 확인합니다.
+5. `8`을 입력해 부저와 감속을 확인합니다.
+6. 약 2초 후 `5`를 입력해 `MOTOR:UNLOCKED SPEED:30`인지 확인합니다.
+7. `9`를 입력해 부저 정지와 속도 복구를 확인합니다.
+8. 시험이 끝나면 반드시 `6`을 입력해 릴레이와 모터 출력을 차단합니다.
+
+실제 테스트 결과:
+
+```text
+5 -> MOTOR:LOCKED SPEED:0
+7 -> UNLOCK_OK
+5 -> MOTOR:UNLOCKED SPEED:67
+5 -> MOTOR:UNLOCKED SPEED:70
+8 -> BUZZ_ON
+5 -> MOTOR:UNLOCKED SPEED:30
+9 -> BUZZ_OFF
+5 -> MOTOR:UNLOCKED SPEED:70
+6 -> LOCK_OK
+```
+
+점진 가속 중 속도 67을 거쳐 목표 속도 70에 도달했고, 경고 시 30으로 감속한 뒤
+경고 해제 시 70으로 복구되었습니다. 마지막 `LOCK` 응답까지 정상 확인했습니다.
+
+### 7. 안전 종료
+
+연속 측정 중이면 `1`과 `3`으로 스트림을 중지하고, `6`으로 모터를 잠근 다음
+`q`를 입력합니다.
+
+```text
+1  -> STOP_WEIGHT
+3  -> STOP_TEST_MQ3
+6  -> LOCK
+q  -> UART 메뉴 종료
+```
+
+### 문제 해결
+
+| 증상 | 확인 사항 |
+|---|---|
+| UART를 열 수 없음 | Uvicorn, miniterm, CubeIDE Serial Terminal이 포트를 점유하는지 확인 |
+| STM32 응답 없음 | ST-LINK USB 연결, 115200 baud, 펌웨어 업로드 상태 확인 |
+| 로드셀 채널이 계속 0.00 | 해당 HX711의 DT/SCK, 전원, 로드셀 배선과 하중 전달 상태 확인 |
+| 하중을 올리면 음수 | 로드셀 A+/A- 또는 설치 방향 확인 |
+| 값은 안정적이지만 실제 무게와 다름 | 채널별 scale 값 재보정 |
+| `kickserial`을 찾을 수 없음 | `source ~/.bashrc` 실행 후 `type kickserial` 확인 |
+
 ---
 
 # 📡 실시간 모니터링 흐름
@@ -493,6 +915,9 @@ SSE /session/stream
         ↓
 React Native 모니터링 화면
 ```
+
+센서 로그 저장은 SSE 접속 여부와 무관합니다. UART로 MQ-3 또는 무게 샘플을
+받을 때마다 활성 세션의 최신 센서 상태를 SQLite에 기록합니다.
 
 SSE는 다음 상태가 변경될 때 프론트에 실시간 정보를 전달합니다.
 
@@ -519,7 +944,7 @@ SSE는 다음 상태가 변경될 때 프론트에 실시간 정보를 전달합
 ```ts
 export const API_BASE = "http://Node서버-Tailscale-IP";
 
-export const RASPI_IP = "RaspberryPi-Tailscale-IP";
+export const RASPI_IP = "100.115.171.90";
 export const RASPI_API_BASE =
   `http://${RASPI_IP}:8000`;
 ```
@@ -585,7 +1010,56 @@ http://라즈베리파이IP:8000/docs
 Tailscale 사용 시:
 
 ```text
-http://라즈베리파이-Tailscale-IP:8000/docs
+http://100.115.171.90:8000/docs
+```
+
+## Node.js 운행 종료 요약 연동
+
+`NODE_SUMMARY_URL`이 설정되어 있으면 `POST /session/end` 처리 후 Node.js로
+운행 요약을 전송합니다. 전송 실패가 라즈베리파이의 로컬 세션 종료를 취소하지는
+않으며, API 응답의 `data.backend_sync`에서 성공 또는 실패를 확인할 수 있습니다.
+
+```env
+NODE_SUMMARY_URL=http://node-server:3000/api/rides/summary
+NODE_SUMMARY_TOKEN=replace-with-backend-token
+NODE_SUMMARY_TIMEOUT_SECONDS=3
+```
+
+요청 본문 형식은 다음과 같습니다.
+
+```json
+{
+  "event": "session.ended",
+  "data": {
+    "id": 1,
+    "kickboard_id": "KB-001",
+    "user_id": 7,
+    "started_at": "...",
+    "ended_at": "...",
+    "status": "ended",
+    "warning_count": 0,
+    "sensor": {"face_score": 0.8, "weight": 65.0, "gas": 640.0},
+    "warning_reasons": []
+  }
+}
+```
+
+## 실제 STM32 UART 검증
+
+킥보드를 안전하게 고정한 상태에서 센서 통신을 검증합니다. 스크립트는 항상
+먼저 `LOCK`을 보내고 종료 시에도 `BUZZ_OFF`, `LOCK`을 전송합니다.
+
+```bash
+python3 scripts/verify_stm32_uart.py --port /dev/serial0
+```
+
+위 명령은 `LOCK_OK`, MQ-3 baseline과 샘플 8개, 무게 샘플 3개를 검증합니다.
+릴레이 잠금 해제와 부저까지 시험할 때만 명시적으로 다음 옵션을 사용합니다.
+
+```bash
+python3 scripts/verify_stm32_uart.py \
+  --port /dev/serial0 \
+  --test-actuators
 ```
 
 ---
@@ -688,12 +1162,8 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 
 # 🔜 다음 구현 및 개선 예정
 
-- STM32 UART 실제 하드웨어 통합 검증
-- MQ-3 알코올 센서 측정값 연동
-- 무게 센서를 이용한 2인 탑승 감지
+- 실제 장비에서 `scripts/verify_stm32_uart.py` 검증 완료
 - 얼굴 등록 실패 시 프론트 면허증 재촬영 흐름 적용
-- 얼굴 인증 실패 횟수 및 재시도 제한
-- 사용자 탈퇴 시 얼굴 임베딩 삭제
-- 임베딩 파일 암호화 또는 접근 권한 강화
-- Node.js 서버와 운행 종료 요약 연동
-- 센서 및 얼굴 인증 통합 테스트
+- 운영 환경 비밀 관리 시스템에 내부 API 키와 Node.js 토큰 등록
+- 네트워크 장애 시 Node.js 요약 전송 재시도 큐 추가
+- 필요 시 OS 파일 권한 보호에 더해 임베딩 저장 암호화 적용

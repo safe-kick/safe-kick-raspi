@@ -9,7 +9,7 @@ from pathlib import Path
 from app.managers.session_manager import SessionManager
 from app.safety.config import load_config
 from app.safety.controller import Controller, SystemState
-from app.safety.protocol import MessageType, WeightReading, parse_line
+from app.safety.protocol import MessageType, MotorState, WeightReading, parse_line
 from app.services import log_service
 from app.services.uart_service import uart_service
 
@@ -32,6 +32,8 @@ class SafetyService:
         self._lock = threading.RLock()
         self._pending_lock_reason: str | None = None
         self._last_uart_line: str | None = None
+        self._motor_state: MotorState | None = None
+        self._motor_state_event = threading.Event()
         self._logger = logging.getLogger(__name__)
 
     def start(self) -> None:
@@ -101,10 +103,37 @@ class SafetyService:
             self._sync_state()
             return accepted
 
+    def send_motor_test_command(self, command: str) -> str:
+        allowed_commands = {"UNLOCK", "BUZZ_ON", "BUZZ_OFF", "LOCK", "MOTOR_STATE"}
+        if command not in allowed_commands:
+            return "invalid_command"
+        if not uart_service.is_connected:
+            return "stm32_disconnected"
+
+        if command == "MOTOR_STATE":
+            self._motor_state_event.clear()
+        try:
+            uart_service.send_command(command)
+        except ConnectionError:
+            return "stm32_disconnected"
+
+        if command == "MOTOR_STATE":
+            if not self._motor_state_event.wait(timeout=0.7):
+                return "response_timeout"
+        return "accepted"
+
     def status(self) -> dict:
         data = SessionManager.get_device_data()
         data["uart_mock"] = uart_service.use_mock
         data["last_uart_line"] = self._last_uart_line
+        data["motor_state"] = (
+            {
+                "unlocked": self._motor_state.unlocked,
+                "speed_percent": self._motor_state.speed_percent,
+            }
+            if self._motor_state is not None
+            else None
+        )
         result = self.controller.last_alcohol_result
         data["alcohol_result"] = (
             {
@@ -136,14 +165,22 @@ class SafetyService:
         message = parse_line(line)
         with self._lock:
             previous = self.controller.state
+            sensor_updated = False
             if message.type is MessageType.WEIGHT_SAMPLE and isinstance(message.value, WeightReading):
                 SessionManager.update_weight(message.value.total)
+                sensor_updated = True
             elif message.type is MessageType.MQ3_SAMPLE:
                 SessionManager.update_gas(float(message.value))
+                sensor_updated = True
+            elif message.type is MessageType.MOTOR_STATE and isinstance(message.value, MotorState):
+                self._motor_state = message.value
+                self._motor_state_event.set()
 
             self.controller.handle(message)
             self._sync_transition(previous, self.controller.state)
             self._sync_state()
+            if sensor_updated:
+                self._save_sensor_snapshot()
 
     def _sync_transition(self, previous: SystemState, current: SystemState) -> None:
         if current is previous:
@@ -177,6 +214,18 @@ class SafetyService:
 
     def _sync_state(self) -> None:
         SessionManager.set_safety_state(self.controller.state.name.lower())
+
+    def _save_sensor_snapshot(self) -> None:
+        session_id = SessionManager.get_session_id()
+        if session_id is None or not SessionManager.is_active():
+            return
+        sensor = SessionManager.get_sensor_data()
+        log_service.save_sensor_log(
+            session_id=session_id,
+            face_score=sensor["face_score"],
+            weight=sensor["weight"],
+            gas=sensor["gas"],
+        )
 
 
 safety_service = SafetyService()

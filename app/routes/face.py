@@ -1,12 +1,21 @@
-from fastapi import APIRouter
+import asyncio
+import hmac
+import logging
+import os
+import time
+
+from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from app.services import face_service
 from app.managers.session_manager import SessionManager
 from app.services.safety_service import safety_service
+from app.services.face_attempt_service import face_attempt_service
+from app.services.helmet_service import helmet_service
 
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
 
 
 class FaceRegisterRequest(BaseModel):
@@ -57,17 +66,45 @@ def verify_face(
     """
     현재 셀피와 저장된 면허증 얼굴을 비교한다.
     """
+    attempt_status = face_attempt_service.get_status(request.user_id)
+    if not attempt_status.allowed:
+        return {
+            "status": "error",
+            "data": {
+                "match": False,
+                "confidence": 0.0,
+                "face_vector": [],
+                "reason": "retry_limit_exceeded",
+                **attempt_status.to_dict(),
+            },
+            "message": "얼굴 인증 재시도 제한에 도달했습니다. 잠시 후 다시 시도하세요."
+        }
+
     result = face_service.verify_face(
         request.user_id,
         request.image
     )
+    logger.info(
+        "Face verification user_id=%s score=%.2f%% threshold=%.2f%% passed=%s reason=%s",
+        request.user_id,
+        result["confidence"] * 100,
+        face_service.REGISTERED_MATCH_THRESHOLD * 100,
+        result["match"],
+        result["reason"],
+    )
 
     if result["match"]:
+        face_attempt_service.reset(request.user_id)
         SessionManager.update_face_score(
             result["confidence"]
         )
         result["safety_check_started"] = safety_service.authentication_completed(
             request.user_id
+        )
+        result.update(face_attempt_service.get_status(request.user_id).to_dict())
+    else:
+        result.update(
+            face_attempt_service.record_failure(request.user_id).to_dict()
         )
 
     return {
@@ -82,6 +119,135 @@ def verify_face(
             if result["match"]
             else "얼굴 인증에 실패했습니다."
         )
+    }
+
+
+def _run_timed_inference(name: str, inference, *args):
+    started_at = time.perf_counter()
+    logger.info("[%s] inference start", name)
+    try:
+        return inference(*args)
+    finally:
+        logger.info(
+            "[%s] inference completed elapsed=%.3fs",
+            name,
+            time.perf_counter() - started_at,
+        )
+
+
+def _face_inference_failure(reason: str = "inference_error") -> dict:
+    return {
+        "match": False,
+        "confidence": 0.0,
+        "face_vector": [],
+        "reason": reason,
+    }
+
+
+def _helmet_inference_failure(reason: str = "inference_error") -> dict:
+    return {
+        "helmet_verified": False,
+        "helmet_score": 0.0,
+        "helmet_class": None,
+        "reason": reason,
+        "helmet_ok": False,
+        "detected_class": None,
+        "confidence": None,
+        "helmet_bbox": None,
+        "without_helmet_score": 0.0,
+    }
+
+
+@router.post("/face/live-verify")
+async def live_verify_face(request: FaceVerifyRequest, response: Response):
+    """Verify face and helmet from one frame without recording retry failures."""
+    image = face_service.face_service.decode_base64_image(request.image)
+    if image is None:
+        face_result = _face_inference_failure("invalid_image")
+        helmet_result = _helmet_inference_failure("invalid_image")
+    else:
+        parallel_started_at = time.perf_counter()
+        logger.info("[AI] parallel inference start")
+        face_result, helmet_result = await asyncio.gather(
+            asyncio.to_thread(
+                _run_timed_inference,
+                "FACE",
+                face_service.face_service.verify_face_image,
+                request.user_id,
+                image,
+            ),
+            asyncio.to_thread(
+                _run_timed_inference,
+                "HELMET",
+                helmet_service.verify_image,
+                image,
+            ),
+            return_exceptions=True,
+        )
+        if isinstance(face_result, BaseException):
+            logger.error("[FACE] inference failed: %s", face_result)
+            face_result = _face_inference_failure()
+        if isinstance(helmet_result, BaseException):
+            logger.error("[HELMET] inference failed: %s", helmet_result)
+            helmet_result = _helmet_inference_failure()
+        logger.info(
+            "[AI] parallel inference completed total=%.3fs",
+            time.perf_counter() - parallel_started_at,
+        )
+
+    face_verified = face_result["match"]
+    helmet_verified = helmet_result["helmet_verified"]
+    verified = face_verified and helmet_verified
+    safety_check_started = False
+
+    helmet_threshold = helmet_service.confidence_threshold()
+    logger.info("[LIVE] ========== verification ==========")
+    logger.info("[LIVE] user_id=%s", request.user_id)
+    logger.info("[LIVE] face_score=%.2f%%", face_result["confidence"] * 100)
+    logger.info("[LIVE] face_threshold=%.2f%%", face_service.REGISTERED_MATCH_THRESHOLD * 100)
+    logger.info("[LIVE] face_passed=%s", face_verified)
+    logger.info("[LIVE] face_reason=%s", face_result["reason"])
+    logger.info("[LIVE] helmet_score=%.2f%%", helmet_result["helmet_score"] * 100)
+    logger.info("[LIVE] without_helmet_score=%.2f%%", helmet_result["without_helmet_score"] * 100)
+    logger.info("[LIVE] helmet_threshold=%.2f%%", helmet_threshold * 100)
+    logger.info("[LIVE] without_helmet_max=%.2f%%", helmet_service.without_helmet_max_confidence() * 100)
+    logger.info("[LIVE] helmet_passed=%s", helmet_verified)
+    logger.info("[LIVE] helmet_reason=%s", helmet_result["reason"])
+    logger.info("[LIVE] verified=%s", verified)
+    logger.info("[LIVE] ==================================")
+
+    SessionManager.update_helmet_status(
+        helmet_verified,
+        helmet_result["helmet_score"],
+    )
+    if verified:
+        face_attempt_service.reset(request.user_id)
+        SessionManager.update_face_score(face_result["confidence"])
+        safety_check_started = safety_service.authentication_completed(request.user_id)
+
+    return {
+        "status": "success" if verified else "error",
+        "data": {
+            "verified": verified,
+            "face_verified": face_verified,
+            "face_score": face_result["confidence"],
+            "helmet_verified": helmet_verified,
+            "helmet_score": helmet_result["helmet_score"],
+            "helmet_class": helmet_result["helmet_class"],
+            "helmet_ok": helmet_result["helmet_ok"],
+            "detected_class": helmet_result["detected_class"],
+            "confidence": helmet_result["confidence"],
+            "helmet_bbox": helmet_result["helmet_bbox"],
+            "without_helmet_score": helmet_result["without_helmet_score"],
+            "face_reason": face_result["reason"],
+            "helmet_reason": helmet_result["reason"],
+            "safety_check_started": safety_check_started,
+        },
+        "message": (
+            "얼굴 및 헬멧 인증이 완료되었습니다."
+            if verified
+            else "얼굴 또는 헬멧 인증에 실패했습니다."
+        ),
     }
 
 
@@ -118,4 +284,35 @@ def detect_face(
             result["reason"],
             "면허증 얼굴 검출에 실패했습니다."
         )
+    }
+
+
+@router.delete("/face/embedding/{user_id}")
+def delete_face_embedding(
+    user_id: int,
+    x_internal_api_key: str | None = Header(default=None),
+):
+    """Delete a user's biometric template after a backend account deletion."""
+    expected_key = os.getenv("INTERNAL_API_KEY")
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_API_KEY is not configured",
+        )
+    if x_internal_api_key is None or not hmac.compare_digest(
+        x_internal_api_key,
+        expected_key,
+    ):
+        raise HTTPException(status_code=401, detail="Invalid internal API key")
+
+    result = face_service.delete_face(user_id)
+    face_attempt_service.reset(user_id)
+    return {
+        "status": "success",
+        "data": result,
+        "message": (
+            "얼굴 임베딩을 삭제했습니다."
+            if result["deleted"]
+            else "저장된 얼굴 임베딩이 없습니다."
+        ),
     }

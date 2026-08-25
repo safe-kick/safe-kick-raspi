@@ -52,8 +52,14 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS face_verification_attempts (
+        user_id INTEGER PRIMARY KEY,
+        failed_attempts INTEGER NOT NULL DEFAULT 0,
+        locked_until REAL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     conn.commit()
     conn.close()
-
-    conn = get_connection()
-

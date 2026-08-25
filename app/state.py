@@ -7,6 +7,8 @@ current_session = {
     },
     "sensor": {
         "face_score": 0.92,
+        "helmet_verified": False,
+        "helmet_score": 0.0,
         "weight": 65.3,
         "gas": 0.12,
     },

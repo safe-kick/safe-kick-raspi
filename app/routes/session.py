@@ -16,6 +16,10 @@ class SessionStartRequest(BaseModel):
     face_vector: Optional[List[float]] = None
 
 
+class WeightCheckRequest(BaseModel):
+    user_id: int
+
+
 @router.post("/session/start")
 def start_session(request: SessionStartRequest):
     return session_service.start_session(request)
@@ -27,6 +31,23 @@ def stream_session():
         session_service.stream_session(),
         media_type="text/event-stream"
     )
+
+
+@router.post("/session/weight-check")
+def start_weight_check(request: WeightCheckRequest):
+    accepted = session_service.start_weight_check(request.user_id)
+    return {
+        "status": "success" if accepted else "error",
+        "data": {
+            "accepted": accepted,
+            "safety_state": session_service.get_safety_state(),
+        },
+        "message": (
+            "탑승 인원 측정을 시작했습니다."
+            if accepted
+            else "음주 검사 통과 대기 상태가 아니거나 세션 사용자가 일치하지 않습니다."
+        ),
+    }
 
 
 @router.post("/session/end")
