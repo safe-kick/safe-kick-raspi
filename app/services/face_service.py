@@ -11,7 +11,7 @@ FACE_MODEL_NAME = "buffalo_sc"
 FACE_PROVIDER = ["CPUExecutionProvider"]
 FACE_DET_SIZE = (320, 320)
 
-REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.45"))
+REGISTERED_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.30"))
 
 
 def get_license_embedding_path(user_id: int):

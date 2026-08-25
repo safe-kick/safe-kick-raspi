@@ -20,6 +20,8 @@ class HelmetServiceTest(unittest.TestCase):
     def setUp(self) -> None:
         self._api_key = os.environ.get("ROBOFLOW_API_KEY")
         self._timeout = os.environ.get("HELMET_INFERENCE_TIMEOUT_SECONDS")
+        self._workspace = os.environ.get("ROBOFLOW_HELMET_WORKSPACE")
+        self._workflow_id = os.environ.get("ROBOFLOW_HELMET_WORKFLOW_ID")
         os.environ["ROBOFLOW_API_KEY"] = "test-key"
 
     def tearDown(self) -> None:
@@ -31,97 +33,116 @@ class HelmetServiceTest(unittest.TestCase):
             os.environ.pop("HELMET_INFERENCE_TIMEOUT_SECONDS", None)
         else:
             os.environ["HELMET_INFERENCE_TIMEOUT_SECONDS"] = self._timeout
+        for name, value in (
+            ("ROBOFLOW_HELMET_WORKSPACE", self._workspace),
+            ("ROBOFLOW_HELMET_WORKFLOW_ID", self._workflow_id),
+        ):
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+    @staticmethod
+    def _prediction(label, confidence, x=10, y=20, width=30, height=40):
+        return {
+            "class": label,
+            "confidence": confidence,
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+        }
 
     def _service(self, response=None, error=None):
         client = Mock()
         if error is not None:
-            client.infer.side_effect = error
+            client.run_workflow.side_effect = error
         else:
-            client.infer.return_value = response
+            client.run_workflow.return_value = response
         return HelmetService(client_factory=lambda **_kwargs: client)
 
     def test_with_helmet_above_threshold_passes(self) -> None:
         service = self._service({
-            "predictions": [{"class": "With Helmet", "confidence": 0.92}],
+            "predictions": [self._prediction("With Helmet", 0.95)],
         })
         result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertTrue(result["helmet_verified"])
         self.assertTrue(result["helmet_ok"])
         self.assertEqual(result["detected_class"], "With Helmet")
-        self.assertEqual(result["confidence"], 0.92)
-        self.assertEqual(result["without_helmet_score"], 0.0)
+        self.assertEqual(result["confidence"], 0.95)
+        self.assertEqual(result["helmet_bbox"], {"x": 10, "y": 20, "width": 30, "height": 40})
         self.assertEqual(result["reason"], "success")
 
     def test_passes_when_with_is_high_and_without_is_low(self) -> None:
         service = self._service({
             "predictions": [
-                {"class": "With Helmet", "confidence": 0.90},
-                {"class": "Without Helmet", "confidence": 0.50},
+                self._prediction("With Helmet", 0.95),
+                self._prediction("Without Helmet", 0.10, x=50),
             ],
         })
         with self.assertLogs("uvicorn.error", level="INFO") as captured:
             result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertTrue(result["helmet_ok"])
-        self.assertEqual(result["helmet_score"], 0.90)
-        self.assertEqual(result["without_helmet_score"], 0.50)
+        self.assertEqual(result["helmet_score"], 0.95)
+        self.assertEqual(result["without_helmet_score"], 0.10)
         message = " ".join(captured.output)
         self.assertIn("With Helmet threshold_min=0.9000", message)
         self.assertIn("Without Helmet threshold_max=0.5000", message)
         self.assertIn("result=PASS", message)
 
-    def test_uses_required_serverless_model(self) -> None:
-        original_model = os.environ.pop("ROBOFLOW_HELMET_MODEL_ID", None)
+    def test_uses_required_serverless_workflow(self) -> None:
         client = Mock()
-        client.infer.return_value = {"predictions": []}
+        client.run_workflow.return_value = {"predictions": []}
         factory = Mock(return_value=client)
-        try:
-            HelmetService(client_factory=factory).verify_image(
-                np.zeros((2, 2, 3), dtype=np.uint8)
-            )
-        finally:
-            if original_model is not None:
-                os.environ["ROBOFLOW_HELMET_MODEL_ID"] = original_model
+        image = np.zeros((2, 2, 3), dtype=np.uint8)
+        HelmetService(client_factory=factory).verify_image(image)
 
         factory.assert_called_once_with(
             api_key="test-key",
             api_url="https://serverless.roboflow.com",
         )
-        self.assertEqual(client.infer.call_args.kwargs["model_id"], "helmet-srsz5/2")
+        client.run_workflow.assert_called_once()
+        call = client.run_workflow.call_args.kwargs
+        self.assertEqual(call["workspace_name"], "8-_-_1-_")
+        self.assertEqual(call["workflow_id"], "helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic")
+        self.assertIs(call["images"]["image"], image)
 
-    def test_logs_model_id_for_each_inference(self) -> None:
+    def test_logs_workspace_and_workflow_for_each_inference(self) -> None:
         service = self._service({"predictions": []})
         with self.assertLogs("uvicorn.error", level="INFO") as captured:
             service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
-        self.assertIn("model_id=helmet-srsz5/2", " ".join(captured.output))
+        message = " ".join(captured.output)
+        self.assertIn("workspace=8-_-_1-_", message)
+        self.assertIn("workflow_id=helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic", message)
 
     def test_without_helmet_fails(self) -> None:
         service = self._service({
             "predictions": [
-                {"class": "With Helmet", "confidence": 0.95},
-                {"class": "Without Helmet", "confidence": 0.70},
+                self._prediction("With Helmet", 0.96),
+                self._prediction("Without Helmet", 0.80, x=50),
             ],
         })
         result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertFalse(result["helmet_verified"])
         self.assertFalse(result["helmet_ok"])
         self.assertEqual(result["detected_class"], "With Helmet")
-        self.assertEqual(result["without_helmet_score"], 0.70)
+        self.assertEqual(result["without_helmet_score"], 0.80)
         self.assertEqual(result["reason"], "without_helmet_detected")
 
     def test_with_helmet_below_threshold_fails(self) -> None:
         service = self._service({
-            "predictions": [{"class": "With Helmet", "confidence": 0.69}],
+            "predictions": [self._prediction("With Helmet", 0.85)],
         })
         result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertFalse(result["helmet_ok"])
         self.assertEqual(result["detected_class"], "With Helmet")
-        self.assertEqual(result["confidence"], 0.69)
+        self.assertEqual(result["confidence"], 0.85)
         self.assertEqual(result["reason"], "confidence_below_threshold")
 
     def test_inference_timeout_fails_safely(self) -> None:
         os.environ["HELMET_INFERENCE_TIMEOUT_SECONDS"] = "0.01"
         client = Mock()
-        client.infer.side_effect = lambda *_args, **_kwargs: time.sleep(0.1)
+        client.run_workflow.side_effect = lambda *_args, **_kwargs: time.sleep(0.1)
         service = HelmetService(client_factory=lambda **_kwargs: client)
         result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
         self.assertFalse(result["helmet_ok"])
@@ -131,13 +152,32 @@ class HelmetServiceTest(unittest.TestCase):
         no_prediction = self._service({"predictions": []}).verify_image(
             np.zeros((2, 2, 3), dtype=np.uint8)
         )
-        failed_request = self._service(error=TimeoutError()).verify_image(
+        failed_request = self._service(error=RuntimeError("workflow failed")).verify_image(
             np.zeros((2, 2, 3), dtype=np.uint8)
         )
         self.assertFalse(no_prediction["helmet_verified"])
         self.assertEqual(no_prediction["reason"], "no_predictions")
         self.assertFalse(failed_request["helmet_verified"])
-        self.assertEqual(failed_request["reason"], "inference_timeout")
+        self.assertEqual(failed_request["reason"], "inference_error")
+
+    def test_without_helmet_only_fails_as_not_detected(self) -> None:
+        result = self._service({
+            "output": [self._prediction("Without Helmet", 0.91)],
+        }).verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
+        self.assertEqual(result["reason"], "helmet_not_detected")
+        self.assertEqual(result["without_helmet_score"], 0.91)
+
+    def test_extracts_nested_predictions_and_removes_duplicates(self) -> None:
+        prediction = self._prediction("With Helmet", 0.96, x=123)
+        service = self._service({
+            "outputs": [{"result": {"predictions": [prediction]}}],
+            "duplicate_output": [prediction],
+        })
+        with self.assertLogs("uvicorn.error", level="INFO") as captured:
+            result = service.verify_image(np.zeros((2, 2, 3), dtype=np.uint8))
+        self.assertTrue(result["helmet_verified"])
+        self.assertEqual(result["helmet_bbox"]["x"], 123)
+        self.assertEqual(" ".join(captured.output).count("prediction class=With Helmet"), 1)
 
     def test_missing_api_key_and_invalid_response_fail_safely(self) -> None:
         os.environ.pop("ROBOFLOW_API_KEY", None)
@@ -291,7 +331,7 @@ class LiveVerifyTest(unittest.TestCase):
 
         message = " ".join(captured.output)
         self.assertIn("face_score=80.00%", message)
-        self.assertIn("face_threshold=45.00%", message)
+        self.assertIn("face_threshold=30.00%", message)
         self.assertIn("helmet_score=90.00%", message)
         self.assertIn("helmet_threshold=90.00%", message)
         self.assertIn("verified=True", message)

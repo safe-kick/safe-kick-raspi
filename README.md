@@ -100,9 +100,11 @@ cp .env.example .env
 커밋하지 말고 실제 장비의 `.env`에만 입력합니다.
 
 ```env
-FACE_MATCH_THRESHOLD=0.45
+FACE_MATCH_THRESHOLD=0.30
 ROBOFLOW_API_KEY=
-ROBOFLOW_HELMET_MODEL_ID=helmet-srsz5/2
+ROBOFLOW_HELMET_WORKSPACE=8-_-_1-_
+ROBOFLOW_HELMET_WORKFLOW_ID=helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic
+HELMET_DEBUG_RESPONSE=false
 HELMET_WITH_CONFIDENCE=0.90
 HELMET_WITHOUT_MAX_CONFIDENCE=0.50
 HELMET_INFERENCE_TIMEOUT_SECONDS=30
@@ -331,8 +333,8 @@ Content-Type: application/json
 `data.verified`, `data.face_verified`, `data.helmet_verified`로 현재 프레임의
 판정 상태를 갱신해야 합니다. 실제 API 접근 권한 오류는 별도의 HTTP 401입니다.
 
-헬멧 판정에는 Roboflow Universe의 `project-pdvie/helmet-srsz5` 프로젝트에서
-배포한 `helmet-srsz5/2`만 사용합니다. `With Helmet` confidence가 0.90 이상이고
+헬멧 판정에는 Roboflow Hosted Workflow
+`helmet-vhelmet-srsz5-kcvrn-2-yolo11n-t1-logic`을 사용합니다. `With Helmet` confidence가 0.90 이상이고
 동시에 `Without Helmet` confidence가 0.50 이하일 때만 통과합니다. API 오류나
 30초 timeout은 모두 안전한 실패로 처리됩니다.
 
@@ -372,7 +374,7 @@ STM32 mock을 포함해 기존 안전 점검 시작까지 확인하려면 테스
 임계값과 최종 통과 여부가 다음 형식으로 기록됩니다.
 
 ```text
-Live verification user_id=1 face_score=67.20% face_threshold=45.00% face_passed=True ... helmet_score=92.03% helmet_threshold=90.00% helmet_passed=True ... verified=True
+Live verification user_id=1 face_score=67.20% face_threshold=30.00% face_passed=True ... helmet_score=92.03% helmet_threshold=90.00% helmet_passed=True ... verified=True
 ```
 
 ```json
@@ -569,7 +571,7 @@ POST /face/verify
 ```env
 FACE_MAX_VERIFY_ATTEMPTS=3
 FACE_VERIFY_LOCKOUT_SECONDS=300
-FACE_MATCH_THRESHOLD=0.45
+FACE_MATCH_THRESHOLD=0.30
 ```
 
 제한 중인 응답에는 `reason=retry_limit_exceeded`, `failed_attempts`,
