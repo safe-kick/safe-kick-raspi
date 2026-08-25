@@ -1,6 +1,8 @@
+import asyncio
 import hmac
 import logging
 import os
+import time
 
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import BaseModel
@@ -120,30 +122,78 @@ def verify_face(
     }
 
 
+def _run_timed_inference(name: str, inference, *args):
+    started_at = time.perf_counter()
+    logger.info("[%s] inference start", name)
+    try:
+        return inference(*args)
+    finally:
+        logger.info(
+            "[%s] inference completed elapsed=%.3fs",
+            name,
+            time.perf_counter() - started_at,
+        )
+
+
+def _face_inference_failure(reason: str = "inference_error") -> dict:
+    return {
+        "match": False,
+        "confidence": 0.0,
+        "face_vector": [],
+        "reason": reason,
+    }
+
+
+def _helmet_inference_failure(reason: str = "inference_error") -> dict:
+    return {
+        "helmet_verified": False,
+        "helmet_score": 0.0,
+        "helmet_class": None,
+        "reason": reason,
+        "helmet_ok": False,
+        "detected_class": None,
+        "confidence": None,
+        "helmet_bbox": None,
+        "without_helmet_score": 0.0,
+    }
+
+
 @router.post("/face/live-verify")
-def live_verify_face(request: FaceVerifyRequest, response: Response):
+async def live_verify_face(request: FaceVerifyRequest, response: Response):
     """Verify face and helmet from one frame without recording retry failures."""
     image = face_service.face_service.decode_base64_image(request.image)
     if image is None:
-        face_result = {
-            "match": False,
-            "confidence": 0.0,
-            "reason": "invalid_image",
-        }
-        helmet_result = {
-            "helmet_verified": False,
-            "helmet_score": 0.0,
-            "helmet_class": None,
-            "reason": "invalid_image",
-            "helmet_ok": False,
-            "detected_class": None,
-            "confidence": None,
-            "helmet_bbox": None,
-            "without_helmet_score": 0.0,
-        }
+        face_result = _face_inference_failure("invalid_image")
+        helmet_result = _helmet_inference_failure("invalid_image")
     else:
-        face_result = face_service.face_service.verify_face_image(request.user_id, image)
-        helmet_result = helmet_service.verify_image(image)
+        parallel_started_at = time.perf_counter()
+        logger.info("[AI] parallel inference start")
+        face_result, helmet_result = await asyncio.gather(
+            asyncio.to_thread(
+                _run_timed_inference,
+                "FACE",
+                face_service.face_service.verify_face_image,
+                request.user_id,
+                image,
+            ),
+            asyncio.to_thread(
+                _run_timed_inference,
+                "HELMET",
+                helmet_service.verify_image,
+                image,
+            ),
+            return_exceptions=True,
+        )
+        if isinstance(face_result, BaseException):
+            logger.error("[FACE] inference failed: %s", face_result)
+            face_result = _face_inference_failure()
+        if isinstance(helmet_result, BaseException):
+            logger.error("[HELMET] inference failed: %s", helmet_result)
+            helmet_result = _helmet_inference_failure()
+        logger.info(
+            "[AI] parallel inference completed total=%.3fs",
+            time.perf_counter() - parallel_started_at,
+        )
 
     face_verified = face_result["match"]
     helmet_verified = helmet_result["helmet_verified"]

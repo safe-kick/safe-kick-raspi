@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -223,7 +224,7 @@ class FaceRotationTest(unittest.TestCase):
         self.assertEqual(model.get.call_count, 4)
 
 
-class LiveVerifyTest(unittest.TestCase):
+class LiveVerifyTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self._original_db_path = db.DB_PATH
         self._temporary_directory = tempfile.TemporaryDirectory()
@@ -238,7 +239,7 @@ class LiveVerifyTest(unittest.TestCase):
         db.DB_PATH = self._original_db_path
         self._temporary_directory.cleanup()
 
-    def _verify(self, face_verified: bool, helmet_verified: bool):
+    async def _verify(self, face_verified: bool, helmet_verified: bool):
         face = {
             "match": face_verified,
             "confidence": 0.8 if face_verified else 0.2,
@@ -272,13 +273,13 @@ class LiveVerifyTest(unittest.TestCase):
             ) as auth_completed,
         ):
             http_response = Response()
-            response = live_verify_face(
+            response = await live_verify_face(
                 FaceVerifyRequest(user_id=7, image="frame"),
                 http_response,
             )
         return response, auth_completed, http_response
 
-    def test_all_face_helmet_combinations(self) -> None:
+    async def test_all_face_helmet_combinations(self) -> None:
         for face, helmet, expected in (
             (True, True, True),
             (True, False, False),
@@ -286,7 +287,7 @@ class LiveVerifyTest(unittest.TestCase):
             (False, False, False),
         ):
             with self.subTest(face=face, helmet=helmet):
-                response, auth_completed, http_response = self._verify(face, helmet)
+                response, auth_completed, http_response = await self._verify(face, helmet)
                 self.assertEqual(response["data"]["verified"], expected)
                 self.assertEqual(auth_completed.called, expected)
                 self.assertEqual(
@@ -296,21 +297,21 @@ class LiveVerifyTest(unittest.TestCase):
                 self.assertEqual(response["data"]["face_verified"], face)
                 self.assertEqual(response["data"]["helmet_verified"], helmet)
 
-    def test_failed_live_verify_does_not_increment_retry_count(self) -> None:
+    async def test_failed_live_verify_does_not_increment_retry_count(self) -> None:
         before = face_attempt_service.get_status(7)
-        response, _, _ = self._verify(False, False)
+        response, _, _ = await self._verify(False, False)
         after = face_attempt_service.get_status(7)
         self.assertFalse(response["data"]["verified"])
         self.assertEqual(after.failed_attempts, before.failed_attempts)
 
-    def test_invalid_image_returns_http_200_with_structured_failure(self) -> None:
+    async def test_invalid_image_returns_http_200_with_structured_failure(self) -> None:
         before = face_attempt_service.get_status(7)
         with patch(
             "app.routes.face.face_service.face_service.decode_base64_image",
             return_value=None,
         ):
             http_response = Response()
-            response = live_verify_face(
+            response = await live_verify_face(
                 FaceVerifyRequest(user_id=7, image="invalid"),
                 http_response,
             )
@@ -325,9 +326,9 @@ class LiveVerifyTest(unittest.TestCase):
         self.assertEqual(response["data"]["helmet_reason"], "invalid_image")
         self.assertEqual(after.failed_attempts, before.failed_attempts)
 
-    def test_live_verify_logs_scores_thresholds_and_result(self) -> None:
+    async def test_live_verify_logs_scores_thresholds_and_result(self) -> None:
         with self.assertLogs("uvicorn.error", level="INFO") as captured:
-            self._verify(True, True)
+            await self._verify(True, True)
 
         message = " ".join(captured.output)
         self.assertIn("face_score=80.00%", message)
@@ -335,6 +336,80 @@ class LiveVerifyTest(unittest.TestCase):
         self.assertIn("helmet_score=90.00%", message)
         self.assertIn("helmet_threshold=90.00%", message)
         self.assertIn("verified=True", message)
+        self.assertIn("[FACE] inference completed elapsed=", message)
+        self.assertIn("[HELMET] inference completed elapsed=", message)
+        self.assertIn("[AI] parallel inference completed total=", message)
+
+    async def test_face_and_helmet_inference_run_in_parallel(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def face_inference(*_args):
+            barrier.wait(timeout=1)
+            return {
+                "match": False,
+                "confidence": 0.2,
+                "face_vector": [],
+                "reason": "not_matched",
+            }
+
+        def helmet_inference(*_args):
+            barrier.wait(timeout=1)
+            return HelmetService._failure("helmet_not_detected")
+
+        with (
+            patch(
+                "app.routes.face.face_service.face_service.decode_base64_image",
+                return_value=self.image,
+            ),
+            patch(
+                "app.routes.face.face_service.face_service.verify_face_image",
+                side_effect=face_inference,
+            ),
+            patch(
+                "app.routes.face.helmet_service.verify_image",
+                side_effect=helmet_inference,
+            ),
+        ):
+            result = await live_verify_face(
+                FaceVerifyRequest(user_id=7, image="frame"), Response()
+            )
+
+        self.assertFalse(result["data"]["face_verified"])
+        self.assertFalse(result["data"]["helmet_verified"])
+
+    async def test_inference_errors_are_isolated_and_fail_closed(self) -> None:
+        helmet = {
+            "helmet_verified": True,
+            "helmet_score": 0.95,
+            "helmet_class": "With Helmet",
+            "reason": "success",
+            "helmet_ok": True,
+            "detected_class": "With Helmet",
+            "confidence": 0.95,
+            "helmet_bbox": None,
+            "without_helmet_score": 0.0,
+        }
+        with (
+            patch(
+                "app.routes.face.face_service.face_service.decode_base64_image",
+                return_value=self.image,
+            ),
+            patch(
+                "app.routes.face.face_service.face_service.verify_face_image",
+                side_effect=RuntimeError("face failed"),
+            ),
+            patch(
+                "app.routes.face.helmet_service.verify_image", return_value=helmet
+            ),
+        ):
+            result = await live_verify_face(
+                FaceVerifyRequest(user_id=7, image="frame"), Response()
+            )
+
+        self.assertFalse(result["data"]["verified"])
+        self.assertFalse(result["data"]["face_verified"])
+        self.assertTrue(result["data"]["helmet_verified"])
+        self.assertEqual(result["data"]["face_reason"], "inference_error")
 
 
 if __name__ == "__main__":
