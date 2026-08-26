@@ -81,6 +81,18 @@ class SafetyLogicTest(unittest.TestCase):
         controller.handle(parse_line("UNLOCK_OK"))
         self.assertEqual(controller.state, SystemState.MONITORING)
 
+    def test_retried_authentication_does_not_restart_alcohol_check(self) -> None:
+        commands: list[str] = []
+        controller = Controller(AppConfig(), commands.append)
+        controller.on_connected()
+        controller.handle(parse_line("LOCK_OK"))
+
+        self.assertTrue(controller.on_authentication_completed())
+        self.assertTrue(controller.on_authentication_completed())
+
+        self.assertEqual(controller.state, SystemState.CHECKING_ALCOHOL)
+        self.assertEqual(commands, ["LOCK", "CHECK_MQ3"])
+
     def test_sustained_two_person_weight_warns_then_locks(self) -> None:
         monitor = OccupancyMonitor(
             WeightConfig(

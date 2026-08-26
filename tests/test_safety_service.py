@@ -27,6 +27,8 @@ class SafetyServiceTest(unittest.TestCase):
         safety_service.start()
         SessionManager.start(1, "KB-001", 7)
         safety_service.prepare_session()
+        SessionManager.update_face_score(0.9)
+        SessionManager.update_helmet_status(True, 0.9)
 
         accepted = safety_service.authentication_completed(7)
 
@@ -58,6 +60,14 @@ class SafetyServiceTest(unittest.TestCase):
         safety_service.prepare_session()
 
         self.assertFalse(safety_service.authentication_completed(8))
+        self.assertTrue(SessionManager.is_locked())
+
+    def test_rejects_alcohol_check_before_face_and_helmet_verification(self) -> None:
+        safety_service.start()
+        SessionManager.start(3, "KB-001", 7)
+        safety_service.prepare_session()
+
+        self.assertFalse(safety_service.authentication_completed(7))
         self.assertTrue(SessionManager.is_locked())
 
     def test_motor_test_commands_with_uart_mock(self) -> None:

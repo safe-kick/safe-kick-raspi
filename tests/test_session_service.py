@@ -55,6 +55,16 @@ class SessionServiceTest(unittest.TestCase):
         self.assertTrue(accepted)
         start_weight_check.assert_called_once_with(7)
 
+    def test_start_alcohol_check_delegates_to_safety_service(self) -> None:
+        with patch(
+            "app.services.session_service.safety_service.authentication_completed",
+            return_value=True,
+        ) as authentication_completed:
+            accepted = session_service.start_alcohol_check(7)
+
+        self.assertTrue(accepted)
+        authentication_completed.assert_called_once_with(7)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -52,7 +52,11 @@ class SafetyService:
         self.request_lock("session_start")
 
     def authentication_completed(self, user_id: int) -> bool:
-        if not SessionManager.is_active() or SessionManager.get_user_id() != user_id:
+        if (
+            not SessionManager.is_active()
+            or SessionManager.get_user_id() != user_id
+            or not SessionManager.is_identity_verified()
+        ):
             return False
         with self._lock:
             accepted = self.controller.on_authentication_completed()

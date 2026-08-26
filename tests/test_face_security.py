@@ -60,7 +60,7 @@ class FaceSecurityTest(unittest.TestCase):
         self.assertTrue(store.delete(3))
         self.assertFalse(store.delete(3))
 
-    def test_face_success_resets_failures_and_starts_safety_check(self) -> None:
+    def test_face_success_resets_failures_without_starting_safety_check(self) -> None:
         safety_service.start()
         SessionManager.start(1, "KB-001", 7)
         safety_service.prepare_session()
@@ -78,10 +78,8 @@ class FaceSecurityTest(unittest.TestCase):
 
         self.assertEqual(response["status"], "success")
         self.assertEqual(response["data"]["failed_attempts"], 0)
-        self.assertTrue(response["data"]["safety_check_started"])
-        self.assertEqual(safety_service.status()["safety_state"], "waiting_rider")
-        self.assertTrue(safety_service.start_weight_check(7))
-        self.assertEqual(safety_service.status()["safety_state"], "monitoring")
+        self.assertFalse(response["data"]["safety_check_started"])
+        self.assertNotEqual(safety_service.status()["safety_state"], "waiting_rider")
 
 
 if __name__ == "__main__":

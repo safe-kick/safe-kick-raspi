@@ -289,7 +289,8 @@ class LiveVerifyTest(unittest.IsolatedAsyncioTestCase):
             with self.subTest(face=face, helmet=helmet):
                 response, auth_completed, http_response = await self._verify(face, helmet)
                 self.assertEqual(response["data"]["verified"], expected)
-                self.assertEqual(auth_completed.called, expected)
+                self.assertFalse(auth_completed.called)
+                self.assertFalse(response["data"]["safety_check_started"])
                 self.assertEqual(
                     http_response.status_code,
                     status.HTTP_200_OK,

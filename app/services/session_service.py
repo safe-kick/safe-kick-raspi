@@ -47,6 +47,10 @@ def start_weight_check(user_id: int) -> bool:
     return safety_service.start_weight_check(user_id)
 
 
+def start_alcohol_check(user_id: int) -> bool:
+    return safety_service.authentication_completed(user_id)
+
+
 def get_safety_state() -> str:
     return safety_service.status()["safety_state"]
 

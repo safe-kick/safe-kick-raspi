@@ -50,6 +50,23 @@ def start_weight_check(request: WeightCheckRequest):
     }
 
 
+@router.post("/session/alcohol-check")
+def start_alcohol_check(request: WeightCheckRequest):
+    accepted = session_service.start_alcohol_check(request.user_id)
+    return {
+        "status": "success" if accepted else "error",
+        "data": {
+            "accepted": accepted,
+            "safety_state": session_service.get_safety_state(),
+        },
+        "message": (
+            "음주 측정을 시작했습니다."
+            if accepted
+            else "얼굴·헬멧 인증이 완료되지 않았거나 세션 사용자가 일치하지 않습니다."
+        ),
+    }
+
+
 @router.post("/session/end")
 def end_session():
     return session_service.end_session()

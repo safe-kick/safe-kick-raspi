@@ -198,7 +198,6 @@ async def live_verify_face(request: FaceVerifyRequest, response: Response):
     face_verified = face_result["match"]
     helmet_verified = helmet_result["helmet_verified"]
     verified = face_verified and helmet_verified
-    safety_check_started = False
 
     helmet_threshold = helmet_service.confidence_threshold()
     logger.info("[LIVE] ========== verification ==========")
@@ -223,7 +222,6 @@ async def live_verify_face(request: FaceVerifyRequest, response: Response):
     if verified:
         face_attempt_service.reset(request.user_id)
         SessionManager.update_face_score(face_result["confidence"])
-        safety_check_started = safety_service.authentication_completed(request.user_id)
 
     return {
         "status": "success" if verified else "error",
@@ -241,7 +239,7 @@ async def live_verify_face(request: FaceVerifyRequest, response: Response):
             "without_helmet_score": helmet_result["without_helmet_score"],
             "face_reason": face_result["reason"],
             "helmet_reason": helmet_result["reason"],
-            "safety_check_started": safety_check_started,
+            "safety_check_started": False,
         },
         "message": (
             "얼굴 및 헬멧 인증이 완료되었습니다."

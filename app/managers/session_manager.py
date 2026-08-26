@@ -14,6 +14,7 @@ class SessionManager:
 
         state.current_session["sensor"]["helmet_verified"] = False
         state.current_session["sensor"]["helmet_score"] = 0.0
+        state.current_session["sensor"]["face_score"] = 0.0
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["count"] = 0
@@ -33,6 +34,7 @@ class SessionManager:
 
         state.current_session["sensor"]["helmet_verified"] = False
         state.current_session["sensor"]["helmet_score"] = 0.0
+        state.current_session["sensor"]["face_score"] = 0.0
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["is_two_person"] = False
@@ -123,6 +125,13 @@ class SessionManager:
     @staticmethod
     def is_locked():
         return state.current_session["device"]["is_locked"]
+
+    @staticmethod
+    def is_identity_verified():
+        return (
+            state.current_session["sensor"]["face_score"] > 0
+            and state.current_session["sensor"]["helmet_verified"] is True
+        )
 
     @staticmethod
     def get_warning_count():

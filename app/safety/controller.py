@@ -53,6 +53,10 @@ class Controller:
         if self.state is SystemState.STARTING:
             self._authentication_pending = True
             return True
+        if self.state in {SystemState.CHECKING_ALCOHOL, SystemState.WAITING_RIDER}:
+            # A retried HTTP response must acknowledge the already-started check
+            # without sending CHECK_MQ3 to the STM32 a second time.
+            return True
         if self.state is not SystemState.LOCKED:
             self._logger.warning("Ignoring authentication in state %s", self.state.name)
             return False
