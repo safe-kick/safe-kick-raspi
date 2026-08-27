@@ -34,6 +34,22 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertEqual(consecutive.positive_samples, 3)
         self.assertTrue(consecutive.unsafe)
 
+    def test_alcohol_fails_when_absolute_threshold_is_exceeded(self) -> None:
+        policy = AlcoholPolicy(AlcoholConfig(absolute_threshold=400))
+
+        at_threshold = policy.evaluate(
+            350,
+            [370, 380, 390, 400, 390, 380, 370, 360],
+        )
+        above_threshold = policy.evaluate(
+            350,
+            [370, 380, 390, 401, 390, 380, 370, 360],
+        )
+
+        self.assertFalse(at_threshold.unsafe)
+        self.assertTrue(above_threshold.unsafe)
+        self.assertEqual(above_threshold.reason, "absolute threshold exceeded")
+
     def test_protocol_parses_weight(self) -> None:
         message = parse_line("FL:20.00 FR:20.00 RL:15.00 RR:10.00 TOTAL:65.00")
         self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
@@ -66,8 +82,8 @@ class SafetyLogicTest(unittest.TestCase):
         controller.on_connected()
         controller.handle(parse_line("LOCK_OK"))
         controller.on_authentication_completed()
-        controller.handle(parse_line("MQ3_BASELINE:600"))
-        for value in range(610, 690, 10):
+        controller.handle(parse_line("MQ3_BASELINE:90"))
+        for value in [110, 108, 92, 92, 88, 88, 93, 92]:
             controller.handle(parse_line(f"MQ3:{value}"))
         controller.handle(parse_line("[END_MQ3]"))
         self.assertEqual(controller.state, SystemState.WAITING_RIDER)

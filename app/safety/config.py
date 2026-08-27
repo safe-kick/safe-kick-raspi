@@ -18,6 +18,7 @@ class AlcoholConfig:
     minimum_delta: int = 100
     required_positive_samples: int = 3
     minimum_sample_count: int = 8
+    absolute_threshold: int = 400
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,8 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("serial.baudrate must be positive")
     if config.alcohol.minimum_sample_count <= 0:
         raise ValueError("alcohol.minimum_sample_count must be positive")
+    if config.alcohol.absolute_threshold <= 0:
+        raise ValueError("alcohol.absolute_threshold must be positive")
     if not 1 <= config.alcohol.required_positive_samples <= config.alcohol.minimum_sample_count:
         raise ValueError("alcohol.required_positive_samples is out of range")
     if config.boarding.sample_count < 3:

@@ -39,8 +39,21 @@ class AlcoholPolicy:
             else:
                 consecutive_count = 0
 
-        unsafe = max_consecutive_count >= self._config.required_positive_samples
+        consecutive_delta_exceeded = (
+            max_consecutive_count >= self._config.required_positive_samples
+        )
+        absolute_threshold_exceeded = any(
+            value > self._config.absolute_threshold
+            for value in samples
+        )
+        unsafe = consecutive_delta_exceeded or absolute_threshold_exceeded
+        if absolute_threshold_exceeded:
+            reason = "absolute threshold exceeded"
+        elif consecutive_delta_exceeded:
+            reason = "alcohol detected"
+        else:
+            reason = "within configured range"
         return AlcoholResult(
             unsafe, baseline, tuple(samples), positive_count, max(deltas, default=0),
-            "alcohol detected" if unsafe else "within configured range",
+            reason,
         )

@@ -138,9 +138,9 @@ class UARTService:
                 )
             ],
             "CHECK_MQ3": [
-                "[CHECK_MQ3]", "MQ3_BASELINE:600",
-                "MQ3:610", "MQ3:620", "MQ3:630", "MQ3:640",
-                "MQ3:650", "MQ3:660", "MQ3:670", "MQ3:680", "[END_MQ3]",
+                "[CHECK_MQ3]", "MQ3_BASELINE:90",
+                "MQ3:110", "MQ3:108", "MQ3:92", "MQ3:92",
+                "MQ3:88", "MQ3:88", "MQ3:93", "MQ3:92", "[END_MQ3]",
             ],
             "CHECK_WEIGHT": [
                 "[CHECK_WEIGHT]",

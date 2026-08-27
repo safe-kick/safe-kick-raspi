@@ -8,6 +8,7 @@ reconnect_delay_seconds = 2.0
 minimum_delta = 100
 required_positive_samples = 3
 minimum_sample_count = 8
+absolute_threshold = 400
 
 [boarding]
 sample_count = 3

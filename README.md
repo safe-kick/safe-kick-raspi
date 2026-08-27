@@ -39,6 +39,29 @@ Raspberry Pi 연결
 시험할 때는 기본값인 `USE_UART_MOCK=true`를 사용하고, 실제 연결 시
 `USE_UART_MOCK=false`와 `SERIAL_PORT=/dev/serial0`을 설정합니다.
 
+### MQ-3 음주 판정 기준
+
+음주 판정값은 `config.toml`의 `[alcohol]`에서 관리합니다.
+
+```toml
+[alcohol]
+minimum_delta = 100
+required_positive_samples = 3
+minimum_sample_count = 8
+absolute_threshold = 400
+```
+
+MQ-3 기준값(baseline)을 정상적으로 수신하고 표본이 8개 이상일 때, 다음 조건 중
+하나라도 만족하면 음주로 판정합니다.
+
+- 기준값 대비 증가량이 `100` 이상인 표본이 `3`회 연속 발생
+- 원시 센서 표본 중 하나라도 `400`을 초과
+
+두 조건은 OR로 적용됩니다. 따라서 원시값 `400`은 절대 임계값 조건을 통과하고,
+`401`부터 음주로 판정됩니다. 기준값이 없거나 표본이 8개보다 적으면 안전을 위해
+검사를 실패 처리합니다. UART mock의 정상 표본은 실제 장비에서 관찰한 90 전후의
+원시값 범위에 맞춰져 있습니다.
+
 ## 앱 연동 및 포트 설정
 
 ### 개발 PC에서 UART mock으로 실행
