@@ -70,6 +70,20 @@ class SafetyServiceTest(unittest.TestCase):
         self.assertFalse(safety_service.authentication_completed(7))
         self.assertTrue(SessionManager.is_locked())
 
+    def test_alcohol_retry_clears_previous_drunk_warning(self) -> None:
+        safety_service.start()
+        SessionManager.start(4, "KB-001", 7)
+        safety_service.prepare_session()
+        SessionManager.update_face_score(0.9)
+        SessionManager.update_helmet_status(True, 0.9)
+        SessionManager.lock("drunk")
+
+        self.assertTrue(safety_service.authentication_completed(7))
+
+        stream = SessionManager.get_stream_data()
+        self.assertIsNone(stream["warning_reason"])
+        self.assertFalse(stream["is_drunk"])
+
     def test_motor_test_commands_with_uart_mock(self) -> None:
         safety_service.start()
 

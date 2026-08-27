@@ -84,6 +84,7 @@ class SessionManager:
         state.current_session["device"]["status"] = "unlocked"
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["is_two_person"] = False
+        state.current_session["warning"]["is_drunk"] = False
 
     @staticmethod
     def set_safety_state(safety_state: str):

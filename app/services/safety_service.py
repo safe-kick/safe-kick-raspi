@@ -60,6 +60,8 @@ class SafetyService:
             return False
         with self._lock:
             accepted = self.controller.on_authentication_completed()
+            if accepted:
+                SessionManager.clear_warning()
             self._sync_state()
             return accepted
 
