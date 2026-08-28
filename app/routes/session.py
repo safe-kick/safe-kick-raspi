@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.services import session_service
+from app.managers.session_manager import SessionManager
 
 router = APIRouter()
 
@@ -62,7 +63,31 @@ def start_alcohol_check(request: WeightCheckRequest):
         "message": (
             "음주 측정을 시작했습니다."
             if accepted
-            else "얼굴·헬멧 인증이 완료되지 않았거나 세션 사용자가 일치하지 않습니다."
+            else (
+                "MQ-3 기준값 측정이 완료되지 않았습니다. 기준값을 다시 측정해주세요."
+                if SessionManager.get_baseline_status() != "ready"
+                else "얼굴·헬멧 인증이 완료되지 않았거나 세션 사용자가 일치하지 않습니다."
+            )
+        ),
+    }
+
+
+@router.post("/session/mq3-baseline")
+def start_mq3_baseline(request: WeightCheckRequest):
+    result = session_service.start_mq3_baseline(request.user_id)
+    accepted = result in {"ready", "in_progress"}
+    return {
+        "status": "success" if accepted else "error",
+        "data": {
+            "accepted": accepted,
+            "baseline_status": SessionManager.get_baseline_status(),
+        },
+        "message": (
+            "MQ-3 기준값이 준비되었습니다."
+            if result == "ready"
+            else "MQ-3 기준값 측정을 시작했습니다."
+            if result == "in_progress"
+            else "MQ-3 기준값 측정을 시작하지 못했습니다."
         ),
     }
 

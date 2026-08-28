@@ -15,6 +15,7 @@ class SessionManager:
         state.current_session["sensor"]["helmet_verified"] = False
         state.current_session["sensor"]["helmet_score"] = 0.0
         state.current_session["sensor"]["face_score"] = 0.0
+        SessionManager.reset_alcohol_state()
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["count"] = 0
@@ -35,6 +36,7 @@ class SessionManager:
         state.current_session["sensor"]["helmet_verified"] = False
         state.current_session["sensor"]["helmet_score"] = 0.0
         state.current_session["sensor"]["face_score"] = 0.0
+        SessionManager.reset_alcohol_state()
 
         state.current_session["warning"]["current_reason"] = None
         state.current_session["warning"]["is_two_person"] = False
@@ -112,6 +114,47 @@ class SessionManager:
         state.current_session["sensor"]["gas"] = gas
 
     @staticmethod
+    def reset_alcohol_state(required_seconds: float = 1.0):
+        sensor = state.current_session["sensor"]
+        sensor["mq3_baseline"] = None
+        sensor["baseline_status"] = "ready"
+        sensor["blow_status"] = "ready"
+        sensor["blow_duration"] = 0.0
+        sensor["blow_required_seconds"] = required_seconds
+        sensor["blow_progress"] = 0.0
+        sensor["hw484_blow_detected"] = False
+
+    @staticmethod
+    def set_baseline_status(status: str, value: int | None = None):
+        sensor = state.current_session["sensor"]
+        sensor["baseline_status"] = status
+        if value is not None:
+            sensor["mq3_baseline"] = value
+
+    @staticmethod
+    def get_baseline() -> int | None:
+        return state.current_session["sensor"]["mq3_baseline"]
+
+    @staticmethod
+    def get_baseline_status() -> str:
+        return state.current_session["sensor"]["baseline_status"]
+
+    @staticmethod
+    def update_blow(
+        status: str,
+        duration: float,
+        required_seconds: float,
+        progress: float,
+        detected: bool,
+    ):
+        sensor = state.current_session["sensor"]
+        sensor["blow_status"] = status
+        sensor["blow_duration"] = duration
+        sensor["blow_required_seconds"] = required_seconds
+        sensor["blow_progress"] = progress
+        sensor["hw484_blow_detected"] = detected
+
+    @staticmethod
     def get_session_id():
         return state.current_session["session"]["session_id"]
 
@@ -150,6 +193,12 @@ class SessionManager:
             "helmet_score": state.current_session["sensor"]["helmet_score"],
             "weight": state.current_session["sensor"]["weight"],
             "gas": state.current_session["sensor"]["gas"],
+            "baseline_status": state.current_session["sensor"]["baseline_status"],
+            "blow_status": state.current_session["sensor"]["blow_status"],
+            "blow_duration": state.current_session["sensor"]["blow_duration"],
+            "blow_required_seconds": state.current_session["sensor"]["blow_required_seconds"],
+            "blow_progress": state.current_session["sensor"]["blow_progress"],
+            "hw484_blow_detected": state.current_session["sensor"]["hw484_blow_detected"],
             "is_two_person": state.current_session["warning"]["is_two_person"],
             "is_drunk": state.current_session["warning"]["is_drunk"],
             "is_locked": state.current_session["device"]["is_locked"],
@@ -171,4 +220,11 @@ class SessionManager:
             "helmet_score": state.current_session["sensor"]["helmet_score"],
             "weight": state.current_session["sensor"]["weight"],
             "gas": state.current_session["sensor"]["gas"],
+            "mq3_baseline": state.current_session["sensor"]["mq3_baseline"],
+            "baseline_status": state.current_session["sensor"]["baseline_status"],
+            "blow_status": state.current_session["sensor"]["blow_status"],
+            "blow_duration": state.current_session["sensor"]["blow_duration"],
+            "blow_required_seconds": state.current_session["sensor"]["blow_required_seconds"],
+            "blow_progress": state.current_session["sensor"]["blow_progress"],
+            "hw484_blow_detected": state.current_session["sensor"]["hw484_blow_detected"],
         }

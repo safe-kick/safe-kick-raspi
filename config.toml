@@ -10,6 +10,13 @@ required_positive_samples = 3
 minimum_sample_count = 8
 absolute_threshold = 400
 
+[blow]
+gpio = 17
+minimum_seconds = 1.0
+max_gap_seconds = 0.2
+poll_interval_seconds = 0.02
+baseline_timeout_seconds = 6.0
+
 [boarding]
 sample_count = 3
 minimum_rider_kg = 20.0

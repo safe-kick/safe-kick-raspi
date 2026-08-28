@@ -56,26 +56,45 @@ def wait_for(serial_port, expected: MessageType, timeout: float):
             raise RuntimeError(f"STM32 reported {message.raw}")
 
 
-def verify_mq3(serial_port, timeout: float) -> tuple[int, list[int]]:
-    send(serial_port, "CHECK_MQ3")
+def verify_mq3_baseline(serial_port, timeout: float) -> int:
+    send(serial_port, "CHECK_MQ3_BASELINE")
     deadline = time.monotonic() + timeout
     baseline = None
-    samples: list[int] = []
     while True:
         message = read_message(serial_port, deadline)
         if message.type is MessageType.MQ3_BASELINE:
             baseline = int(message.value)
-        elif message.type is MessageType.MQ3_SAMPLE:
-            samples.append(int(message.value))
-        elif message.type is MessageType.MQ3_END:
+        elif message.type is MessageType.MQ3_BASELINE_END:
             break
         elif message.type in {MessageType.FAULT, MessageType.ERROR}:
             raise RuntimeError(f"STM32 reported {message.raw}")
     if baseline is None:
         raise RuntimeError("MQ3_BASELINE was not received")
+    return baseline
+
+
+def verify_mq3_measure(serial_port, timeout: float) -> list[int]:
+    send(serial_port, "CHECK_MQ3_MEASURE")
+    deadline = time.monotonic() + timeout
+    measure_started = False
+    samples: list[int] = []
+    while True:
+        message = read_message(serial_port, deadline)
+        if message.type is MessageType.MEASURE_BEGIN:
+            measure_started = True
+        elif message.type is MessageType.MQ3_SAMPLE:
+            if not measure_started:
+                raise RuntimeError("MQ3 sample arrived before MEASURE_BEGIN")
+            samples.append(int(message.value))
+        elif message.type is MessageType.MQ3_MEASURE_END:
+            break
+        elif message.type in {MessageType.FAULT, MessageType.ERROR}:
+            raise RuntimeError(f"STM32 reported {message.raw}")
+    if not measure_started:
+        raise RuntimeError("MEASURE_BEGIN was not received")
     if len(samples) != 8:
         raise RuntimeError(f"Expected 8 MQ3 samples, received {len(samples)}")
-    return baseline, samples
+    return samples
 
 
 def verify_weight(serial_port, count: int, timeout: float) -> list[float]:
@@ -109,7 +128,8 @@ def main() -> int:
         send(serial_port, "LOCK")
         wait_for(serial_port, MessageType.LOCK_OK, args.timeout)
 
-        baseline, mq3_samples = verify_mq3(serial_port, args.timeout)
+        baseline = verify_mq3_baseline(serial_port, args.timeout)
+        mq3_samples = verify_mq3_measure(serial_port, args.timeout)
         weight_totals = verify_weight(serial_port, args.weight_samples, args.timeout)
 
         if args.test_actuators:

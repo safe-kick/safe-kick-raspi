@@ -1,8 +1,9 @@
 import unittest
 
 from app.safety.alcohol import AlcoholPolicy
+from app.safety.blow import BlowDetector
 from app.safety.boarding import BoardingMonitor
-from app.safety.config import AlcoholConfig, AppConfig, BoardingConfig, WeightConfig
+from app.safety.config import AlcoholConfig, AppConfig, BlowConfig, BoardingConfig, WeightConfig
 from app.safety.controller import Controller, SystemState
 from app.safety.occupancy import OccupancyAction, OccupancyMonitor
 from app.safety.protocol import MessageType, MotorState, WeightReading, parse_line
@@ -81,11 +82,17 @@ class SafetyLogicTest(unittest.TestCase):
         controller = Controller(AppConfig(), commands.append)
         controller.on_connected()
         controller.handle(parse_line("LOCK_OK"))
-        controller.on_authentication_completed()
+        controller.request_baseline_capture()
+        controller.handle(parse_line("[CHECK_MQ3_BASELINE]"))
         controller.handle(parse_line("MQ3_BASELINE:90"))
+        controller.handle(parse_line("[END_MQ3_BASELINE]"))
+        controller.on_authentication_completed()
+        controller.handle(parse_line("[CHECK_MQ3_MEASURE]"))
+        controller.handle(parse_line("MEASURE_BEGIN"))
         for value in [110, 108, 92, 92, 88, 88, 93, 92]:
             controller.handle(parse_line(f"MQ3:{value}"))
-        controller.handle(parse_line("[END_MQ3]"))
+        controller.set_hw484_result(True)
+        controller.handle(parse_line("MEASURE_END"))
         self.assertEqual(controller.state, SystemState.WAITING_RIDER)
         self.assertTrue(controller.start_rider_check())
         for _ in range(3):
@@ -93,7 +100,10 @@ class SafetyLogicTest(unittest.TestCase):
                 parse_line("FL:24.00 FR:20.00 RL:11.00 RR:10.00 TOTAL:65.00")
             )
         self.assertEqual(controller.state, SystemState.UNLOCKING)
-        self.assertEqual(commands, ["LOCK", "CHECK_MQ3", "CHECK_WEIGHT", "UNLOCK"])
+        self.assertEqual(commands, [
+            "LOCK", "CHECK_MQ3_BASELINE", "CHECK_MQ3_MEASURE",
+            "CHECK_WEIGHT", "UNLOCK",
+        ])
         controller.handle(parse_line("UNLOCK_OK"))
         self.assertEqual(controller.state, SystemState.MONITORING)
 
@@ -102,12 +112,15 @@ class SafetyLogicTest(unittest.TestCase):
         controller = Controller(AppConfig(), commands.append)
         controller.on_connected()
         controller.handle(parse_line("LOCK_OK"))
+        controller.request_baseline_capture()
+        controller.handle(parse_line("MQ3_BASELINE:90"))
+        controller.handle(parse_line("[END_MQ3_BASELINE]"))
 
         self.assertTrue(controller.on_authentication_completed())
         self.assertTrue(controller.on_authentication_completed())
 
         self.assertEqual(controller.state, SystemState.CHECKING_ALCOHOL)
-        self.assertEqual(commands, ["LOCK", "CHECK_MQ3"])
+        self.assertEqual(commands, ["LOCK", "CHECK_MQ3_BASELINE", "CHECK_MQ3_MEASURE"])
 
     def test_sustained_two_person_weight_warns_then_locks(self) -> None:
         monitor = OccupancyMonitor(
@@ -133,15 +146,58 @@ class SafetyLogicTest(unittest.TestCase):
         controller = Controller(AppConfig(), commands.append)
         controller.on_connected()
         controller.handle(parse_line("LOCK_OK"))
-        controller.on_authentication_completed()
+        controller.request_baseline_capture()
         controller.handle(parse_line("MQ3_BASELINE:600"))
+        controller.handle(parse_line("[END_MQ3_BASELINE]"))
+        controller.on_authentication_completed()
         for value in [720] * 8:
             controller.handle(parse_line(f"MQ3:{value}"))
-        controller.handle(parse_line("[END_MQ3]"))
+        controller.set_hw484_result(True)
+        controller.handle(parse_line("MEASURE_END"))
 
         self.assertEqual(controller.state, SystemState.LOCKED)
         self.assertTrue(controller.last_alcohol_result.unsafe)
         self.assertEqual(commands[-1], "LOCK")
+
+    def test_hw484_tolerates_short_gap_and_resets_after_long_gap(self) -> None:
+        detector = BlowDetector(BlowConfig(minimum_seconds=1.0, max_gap_seconds=0.2))
+
+        detector.observe(True, 0.0)
+        detector.observe(True, 0.5)
+        detector.observe(False, 0.6)
+        short_gap = detector.observe(True, 0.75)
+        success = detector.observe(True, 1.0)
+
+        self.assertEqual(short_gap.status, "blowing")
+        self.assertTrue(success.detected)
+
+        detector.reset()
+        detector.observe(True, 2.0)
+        detector.observe(False, 2.5)
+        retry = detector.observe(False, 2.71)
+
+        self.assertEqual(retry.status, "retry")
+        self.assertEqual(retry.duration, 0.0)
+
+    def test_invalid_hw484_breath_retries_without_recapturing_baseline(self) -> None:
+        commands: list[str] = []
+        controller = Controller(AppConfig(), commands.append)
+        controller.on_connected()
+        controller.handle(parse_line("LOCK_OK"))
+        controller.request_baseline_capture()
+        controller.handle(parse_line("MQ3_BASELINE:90"))
+        controller.handle(parse_line("[END_MQ3_BASELINE]"))
+
+        self.assertTrue(controller.on_authentication_completed())
+        for value in [95] * 8:
+            controller.handle(parse_line(f"MQ3:{value}"))
+        controller.set_hw484_result(False)
+        controller.handle(parse_line("MEASURE_END"))
+
+        self.assertEqual(controller.state, SystemState.ALCOHOL_RETRY)
+        self.assertTrue(controller.on_authentication_completed())
+        self.assertEqual(commands.count("CHECK_MQ3_BASELINE"), 1)
+        self.assertEqual(commands.count("CHECK_MQ3_MEASURE"), 2)
 
 
 if __name__ == "__main__":

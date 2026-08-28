@@ -22,6 +22,15 @@ class AlcoholConfig:
 
 
 @dataclass(frozen=True)
+class BlowConfig:
+    gpio: int = 17
+    minimum_seconds: float = 1.0
+    max_gap_seconds: float = 0.2
+    poll_interval_seconds: float = 0.02
+    baseline_timeout_seconds: float = 6.0
+
+
+@dataclass(frozen=True)
 class BoardingConfig:
     sample_count: int = 3
     minimum_rider_kg: float = 20.0
@@ -41,6 +50,7 @@ class WeightConfig:
 class AppConfig:
     serial: SerialConfig = SerialConfig()
     alcohol: AlcoholConfig = AlcoholConfig()
+    blow: BlowConfig = BlowConfig()
     boarding: BoardingConfig = BoardingConfig()
     weight: WeightConfig = WeightConfig()
 
@@ -64,6 +74,7 @@ def load_config(path: str | Path) -> AppConfig:
     config = AppConfig(
         serial=SerialConfig(**_section(data, "serial")),
         alcohol=AlcoholConfig(**_section(data, "alcohol")),
+        blow=BlowConfig(**_section(data, "blow")),
         boarding=BoardingConfig(**_section(data, "boarding")),
         weight=WeightConfig(**_section(data, "weight")),
     )
@@ -109,6 +120,16 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("alcohol.absolute_threshold must be positive")
     if not 1 <= config.alcohol.required_positive_samples <= config.alcohol.minimum_sample_count:
         raise ValueError("alcohol.required_positive_samples is out of range")
+    if config.blow.gpio < 0:
+        raise ValueError("blow.gpio must not be negative")
+    if config.blow.minimum_seconds <= 0:
+        raise ValueError("blow.minimum_seconds must be positive")
+    if config.blow.max_gap_seconds < 0:
+        raise ValueError("blow.max_gap_seconds must not be negative")
+    if config.blow.poll_interval_seconds <= 0:
+        raise ValueError("blow.poll_interval_seconds must be positive")
+    if config.blow.baseline_timeout_seconds <= 0:
+        raise ValueError("blow.baseline_timeout_seconds must be positive")
     if config.boarding.sample_count < 3:
         raise ValueError("boarding.sample_count must be at least 3")
     if config.boarding.minimum_rider_kg >= config.boarding.maximum_rider_kg:

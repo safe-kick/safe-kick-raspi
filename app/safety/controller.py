@@ -14,6 +14,7 @@ class SystemState(Enum):
     STARTING = auto()
     LOCKED = auto()
     CHECKING_ALCOHOL = auto()
+    ALCOHOL_RETRY = auto()
     WAITING_RIDER = auto()
     CHECKING_RIDER = auto()
     UNLOCKING = auto()
@@ -35,6 +36,10 @@ class Controller:
         self._occupancy = OccupancyMonitor(config.weight)
         self._baseline: int | None = None
         self._mq3_samples: list[int] = []
+        self._baseline_pending = False
+        self._baseline_in_progress = False
+        self._hw484_blow_detected = False
+        self.last_valid_blow = False
         self._waiting_for_initial_lock = False
         self._authentication_pending = False
         self._logger = logging.getLogger(__name__)
@@ -43,25 +48,68 @@ class Controller:
         self.state = SystemState.STARTING
         self._waiting_for_initial_lock = True
         self._baseline = None
+        self._baseline_pending = False
+        self._baseline_in_progress = False
         self._mq3_samples.clear()
+        self._hw484_blow_detected = False
+        self.last_valid_blow = False
         self._boarding.reset()
         self._occupancy.reset()
         self.rider_baseline = None
         self._send("LOCK")
 
+    def reset_session(self) -> None:
+        self._baseline = None
+        self._baseline_pending = False
+        self._baseline_in_progress = False
+        self._mq3_samples.clear()
+        self._authentication_pending = False
+        self._hw484_blow_detected = False
+        self.last_valid_blow = False
+        self.last_alcohol_result = None
+
     def on_authentication_completed(self) -> bool:
+        if self._baseline is None:
+            self._logger.warning("Ignoring alcohol check without MQ3 baseline")
+            return False
         if self.state is SystemState.STARTING:
             self._authentication_pending = True
             return True
         if self.state in {SystemState.CHECKING_ALCOHOL, SystemState.WAITING_RIDER}:
-            # A retried HTTP response must acknowledge the already-started check
-            # without sending CHECK_MQ3 to the STM32 a second time.
             return True
-        if self.state is not SystemState.LOCKED:
+        if self.state not in {SystemState.LOCKED, SystemState.ALCOHOL_RETRY}:
             self._logger.warning("Ignoring authentication in state %s", self.state.name)
             return False
         self._start_alcohol_check()
         return True
+
+    @property
+    def baseline(self) -> int | None:
+        return self._baseline
+
+    @property
+    def baseline_in_progress(self) -> bool:
+        return self._baseline_in_progress or self._baseline_pending
+
+    def request_baseline_capture(self) -> bool:
+        if self._baseline is not None or self.baseline_in_progress:
+            return True
+        if self.state is SystemState.STARTING:
+            self._baseline_pending = True
+            return True
+        if self.state is not SystemState.LOCKED:
+            self._logger.warning("Ignoring baseline in state %s", self.state.name)
+            return False
+        self._start_baseline_capture()
+        return True
+
+    def baseline_failed(self) -> None:
+        self._baseline = None
+        self._baseline_pending = False
+        self._baseline_in_progress = False
+
+    def set_hw484_result(self, detected: bool) -> None:
+        self._hw484_blow_detected = detected
 
     def handle(self, message: Message) -> None:
         message_type = message.type
@@ -74,19 +122,36 @@ class Controller:
             self._occupancy.reset()
             if self._waiting_for_initial_lock:
                 self._waiting_for_initial_lock = False
+                if self._baseline_pending:
+                    self._start_baseline_capture()
                 if self._authentication_pending:
                     self._authentication_pending = False
                     self._start_alcohol_check()
         elif message_type is MessageType.MQ3_START:
+            # Legacy CHECK_MQ3 response support.
             self._baseline = None
             self._mq3_samples.clear()
             self.state = SystemState.CHECKING_ALCOHOL
+        elif message_type is MessageType.MQ3_BASELINE_START:
+            self._baseline_in_progress = True
         elif message_type is MessageType.MQ3_BASELINE:
             self._baseline = int(message.value)
+        elif message_type is MessageType.MQ3_BASELINE_END:
+            self._baseline_in_progress = False
+        elif message_type is MessageType.MQ3_MEASURE_START:
+            self._mq3_samples.clear()
+            self._hw484_blow_detected = False
+            self.last_valid_blow = False
+            self.state = SystemState.CHECKING_ALCOHOL
+        elif message_type is MessageType.MEASURE_BEGIN:
+            self.state = SystemState.CHECKING_ALCOHOL
         elif message_type is MessageType.MQ3_SAMPLE:
             self._mq3_samples.append(int(message.value))
         elif message_type is MessageType.MQ3_END:
             self._finish_alcohol_check()
+        elif message_type is MessageType.MQ3_MEASURE_END:
+            if self.state is SystemState.CHECKING_ALCOHOL:
+                self._finish_alcohol_check()
         elif message_type is MessageType.UNLOCK_OK:
             self.state = SystemState.MONITORING
             self._occupancy.reset()
@@ -118,17 +183,36 @@ class Controller:
         return True
 
     def _start_alcohol_check(self) -> None:
-        self._baseline = None
         self._mq3_samples.clear()
+        self._hw484_blow_detected = False
+        self.last_valid_blow = False
         self.state = SystemState.CHECKING_ALCOHOL
-        self._send("CHECK_MQ3")
+        self._send("CHECK_MQ3_MEASURE")
+
+    def _start_baseline_capture(self) -> None:
+        self._baseline_pending = False
+        self._baseline_in_progress = True
+        self._send("CHECK_MQ3_BASELINE")
 
     def _finish_alcohol_check(self) -> None:
         result = self._alcohol.evaluate(self._baseline, self._mq3_samples)
         self.last_alcohol_result = result
-        if result.unsafe:
+        self.last_valid_blow = result.is_blown and self._hw484_blow_detected
+        self._logger.info(
+            "[ALCOHOL] baseline=%s peak_delta=%d is_blown=%s hw484=%s "
+            "valid_blow=%s is_drunk=%s",
+            self._baseline,
+            result.peak_delta,
+            result.is_blown,
+            self._hw484_blow_detected,
+            self.last_valid_blow,
+            result.is_drunk,
+        )
+        if result.is_drunk:
             self.state = SystemState.LOCKED
             self._send("LOCK")
+        elif not self.last_valid_blow:
+            self.state = SystemState.ALCOHOL_RETRY
         else:
             self.state = SystemState.WAITING_RIDER
 

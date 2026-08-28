@@ -127,6 +127,14 @@ class UARTService:
             self._mock_motor_unlocked = False
             self._mock_motor_speed = 0
 
+        if command == "CHECK_MQ3_MEASURE":
+            threading.Thread(
+                target=self._emit_mock_measure,
+                name="stm32-mock-mq3",
+                daemon=True,
+            ).start()
+            return
+
         responses = {
             "LOCK": ["LOCK_OK"],
             "UNLOCK": ["UNLOCK_OK"],
@@ -142,6 +150,9 @@ class UARTService:
                 "MQ3:110", "MQ3:108", "MQ3:92", "MQ3:92",
                 "MQ3:88", "MQ3:88", "MQ3:93", "MQ3:92", "[END_MQ3]",
             ],
+            "CHECK_MQ3_BASELINE": [
+                "[CHECK_MQ3_BASELINE]", "MQ3_BASELINE:90", "[END_MQ3_BASELINE]",
+            ],
             "CHECK_WEIGHT": [
                 "[CHECK_WEIGHT]",
                 "FL:24.00 FR:20.00 RL:11.00 RR:10.00 TOTAL:65.00",
@@ -151,6 +162,21 @@ class UARTService:
         }.get(command, [])
         for line in responses:
             self._line_handler(line)
+
+    def _emit_mock_measure(self) -> None:
+        if not self._line_handler:
+            return
+        self._line_handler("[CHECK_MQ3_MEASURE]")
+        if self._stop.wait(0.05):
+            return
+        self._line_handler("MEASURE_BEGIN")
+        samples = [110, 108, 92, 92, 88, 88, 93, 92]
+        for index, value in enumerate(samples):
+            self._line_handler(f"MQ3:{value}")
+            if index + 1 < len(samples) and self._stop.wait(0.16):
+                return
+        self._line_handler("MEASURE_END")
+        self._line_handler("[END_MQ3_MEASURE]")
 
 
 uart_service = UARTService()

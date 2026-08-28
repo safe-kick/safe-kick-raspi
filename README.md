@@ -15,6 +15,8 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - 실시간 얼굴·자전거 헬멧 통합 인증
 - 사용자별 얼굴 임베딩 저장
 - 앱 인증 이후 STM32 안전 절차 자동 실행
+- 얼굴 인증과 병렬로 MQ-3 baseline 선측정
+- HW-484(GPIO17, active-low) 호흡 지속시간 검증과 SSE 진행률
 - 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
 
 ## STM32 안전 절차
@@ -22,8 +24,12 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 ```text
 Raspberry Pi 연결
   -> LOCK / LOCK_OK
-  -> 앱 QR·회원·얼굴 인증 완료 대기
-  -> CHECK_MQ3
+  -> 얼굴 측정 진입과 동시에 CHECK_MQ3_BASELINE
+  -> baseline을 현재 세션에 저장
+  -> 얼굴·헬멧 인증 및 음주 측정 시작 버튼 대기
+  -> CHECK_MQ3_MEASURE
+  -> STM32 안내음 종료 / MEASURE_BEGIN
+  -> MQ-3 실측 + HW-484 호흡 감지
   -> 음주 검사 통과
   -> 무게 측정 시작 이벤트 대기
   -> CHECK_WEIGHT
@@ -58,8 +64,9 @@ MQ-3 기준값(baseline)을 정상적으로 수신하고 표본이 8개 이상�
 - 원시 센서 표본 중 하나라도 `400`을 초과
 
 두 조건은 OR로 적용됩니다. 따라서 원시값 `400`은 절대 임계값 조건을 통과하고,
-`401`부터 음주로 판정됩니다. 기준값이 없거나 표본이 8개보다 적으면 안전을 위해
-검사를 실패 처리합니다. UART mock의 정상 표본은 실제 장비에서 관찰한 90 전후의
+`401`부터 음주로 판정됩니다. 기준값이 없거나 표본이 8개보다 적으면 유효하지
+않은 호흡으로 보고 재시도합니다. 기존 MQ-3 표본 유효성과 HW-484 1초 호흡이
+모두 확인된 경우에만 음주 임계값 결과를 적용합니다. UART mock의 정상 표본은 실제 장비에서 관찰한 90 전후의
 원시값 범위에 맞춰져 있습니다.
 
 ## 앱 연동 및 포트 설정
@@ -73,6 +80,7 @@ MQ-3 기준값(baseline)을 정상적으로 수신하고 표본이 8개 이상�
 ENABLE_FACE_API=false
 ENABLE_TEST_API=true
 USE_UART_MOCK=true
+USE_GPIO_MOCK=true
 ```
 
 ```bash
@@ -109,6 +117,10 @@ ALLOW_MANUAL_UNLOCK=false
 USE_UART_MOCK=false
 SERIAL_PORT=/dev/serial0
 BAUD_RATE=115200
+USE_GPIO_MOCK=false
+MIC_GPIO=17
+MIN_BLOW_SECONDS=1.0
+MAX_GAP_SECONDS=0.2
 ```
 
 처음 설정할 때는 `.env.example`을 복사한 뒤 장비 환경에 맞게 수정합니다.
@@ -150,6 +162,13 @@ IP 주소와 포트는 실제 실행 중인 Raspberry Pi 서버와 반드시 일
 주소를 변경한 뒤에는 Expo 개발 서버를 재시작해야 새 환경변수가 앱 번들에
 반영됩니다.
 
+HW-484 단독 확인은 다음처럼 실행합니다. 기본 HIGH(1), 감지 LOW(0)이며 0.2초
+이하의 HIGH gap은 같은 호흡으로 유지합니다.
+
+```bash
+python3 scripts/test_hw484.py
+```
+
 연결 확인에는 별도 `/health` 경로가 아니라 다음 API를 사용합니다.
 
 ```bash
@@ -180,6 +199,10 @@ python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 curl -X POST http://127.0.0.1:8000/session/start \
   -H 'Content-Type: application/json' \
   -d '{"user_id":7,"kickboard_id":"KB-001"}'
+
+curl -X POST http://127.0.0.1:8000/session/mq3-baseline \
+  -H 'Content-Type: application/json' \
+  -d '{"user_id":7}'
 
 curl -X POST http://127.0.0.1:8000/test/auth-complete \
   -H 'Content-Type: application/json' \

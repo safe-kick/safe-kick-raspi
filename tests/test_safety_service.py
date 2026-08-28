@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -29,11 +30,15 @@ class SafetyServiceTest(unittest.TestCase):
         safety_service.prepare_session()
         SessionManager.update_face_score(0.9)
         SessionManager.update_helmet_status(True, 0.9)
+        self.assertIn(safety_service.request_baseline(7), {"ready", "in_progress"})
 
         accepted = safety_service.authentication_completed(7)
 
         self.assertTrue(accepted)
         self.assertTrue(SessionManager.is_locked())
+        deadline = time.monotonic() + 3
+        while safety_service.status()["safety_state"] == "checking_alcohol" and time.monotonic() < deadline:
+            time.sleep(0.02)
         self.assertEqual(safety_service.status()["safety_state"], "waiting_rider")
 
         weight_check_started = safety_service.start_weight_check(7)
@@ -76,6 +81,7 @@ class SafetyServiceTest(unittest.TestCase):
         safety_service.prepare_session()
         SessionManager.update_face_score(0.9)
         SessionManager.update_helmet_status(True, 0.9)
+        self.assertIn(safety_service.request_baseline(7), {"ready", "in_progress"})
         SessionManager.lock("drunk")
 
         self.assertTrue(safety_service.authentication_completed(7))

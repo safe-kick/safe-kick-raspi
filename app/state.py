@@ -11,6 +11,13 @@ current_session = {
         "helmet_score": 0.0,
         "weight": 65.3,
         "gas": 0.12,
+        "mq3_baseline": None,
+        "baseline_status": "ready",
+        "blow_status": "ready",
+        "blow_duration": 0.0,
+        "blow_required_seconds": 1.0,
+        "blow_progress": 0.0,
+        "hw484_blow_detected": False,
     },
     "warning": {
         "count": 0,

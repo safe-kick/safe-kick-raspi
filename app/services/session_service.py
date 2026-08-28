@@ -51,6 +51,10 @@ def start_alcohol_check(user_id: int) -> bool:
     return safety_service.authentication_completed(user_id)
 
 
+def start_mq3_baseline(user_id: int) -> str:
+    return safety_service.request_baseline(user_id)
+
+
 def get_safety_state() -> str:
     return safety_service.status()["safety_state"]
 
@@ -61,7 +65,7 @@ async def stream_session():
 
         yield f"data: {json.dumps(event_data)}\n\n"
 
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.05)
 
 
 def end_session():

@@ -11,9 +11,14 @@ class MessageType(Enum):
     BOOTING = auto()
     READY = auto()
     MQ3_START = auto()
+    MQ3_BASELINE_START = auto()
     MQ3_BASELINE = auto()
+    MQ3_BASELINE_END = auto()
+    MQ3_MEASURE_START = auto()
+    MEASURE_BEGIN = auto()
     MQ3_SAMPLE = auto()
     MQ3_END = auto()
+    MQ3_MEASURE_END = auto()
     WEIGHT_START = auto()
     WEIGHT_SAMPLE = auto()
     WEIGHT_END = auto()
@@ -48,7 +53,8 @@ class Message:
 
 
 COMMANDS = {
-    "CHECK_MQ3", "TEST_MQ3", "STOP_TEST_MQ3", "CHECK_WEIGHT",
+    "CHECK_MQ3", "CHECK_MQ3_BASELINE", "CHECK_MQ3_MEASURE",
+    "TEST_MQ3", "STOP_TEST_MQ3", "CHECK_WEIGHT",
     "STOP_WEIGHT", "BUZZ_ON", "BUZZ_OFF", "LOCK", "UNLOCK", "MOTOR_STATE",
 }
 
@@ -76,6 +82,12 @@ def parse_line(line: str) -> Message:
         return Message(MessageType.READY, raw)
     markers = {
         "[CHECK_MQ3]": MessageType.MQ3_START,
+        "[CHECK_MQ3_BASELINE]": MessageType.MQ3_BASELINE_START,
+        "[END_MQ3_BASELINE]": MessageType.MQ3_BASELINE_END,
+        "[CHECK_MQ3_MEASURE]": MessageType.MQ3_MEASURE_START,
+        "MEASURE_BEGIN": MessageType.MEASURE_BEGIN,
+        "MEASURE_END": MessageType.MQ3_MEASURE_END,
+        "[END_MQ3_MEASURE]": MessageType.MQ3_MEASURE_END,
         "[END_MQ3]": MessageType.MQ3_END,
         "[CHECK_WEIGHT]": MessageType.WEIGHT_START,
         "[END_WEIGHT]": MessageType.WEIGHT_END,

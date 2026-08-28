@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from app.managers.session_manager import SessionManager
 from app.services.safety_service import safety_service
 
 router = APIRouter(prefix="/test", tags=["test-only"])
@@ -13,6 +14,8 @@ class AuthenticationCompleteRequest(BaseModel):
 @router.post("/auth-complete")
 def complete_authentication(request: AuthenticationCompleteRequest):
     """Simulate the backend's app-authentication-completed event."""
+    SessionManager.update_face_score(1.0)
+    SessionManager.update_helmet_status(True, 1.0)
     accepted = safety_service.authentication_completed(request.user_id)
     return {
         "status": "success" if accepted else "error",
