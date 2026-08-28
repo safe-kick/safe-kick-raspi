@@ -75,6 +75,14 @@ class SessionServiceTest(unittest.TestCase):
         self.assertEqual(result, "in_progress")
         request_baseline.assert_called_once_with(7)
 
+    def test_new_session_waits_for_mq3_baseline(self) -> None:
+        request = SimpleNamespace(user_id=7, kickboard_id="KB-001")
+        with patch("app.services.session_service.safety_service.prepare_session"):
+            session_service.start_session(request)
+
+        self.assertEqual(SessionManager.get_baseline_status(), "measuring")
+        self.assertIsNone(SessionManager.get_baseline())
+
 
 if __name__ == "__main__":
     unittest.main()

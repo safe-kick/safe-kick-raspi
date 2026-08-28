@@ -12,7 +12,7 @@ current_session = {
         "weight": 65.3,
         "gas": 0.12,
         "mq3_baseline": None,
-        "baseline_status": "ready",
+        "baseline_status": "measuring",
         "blow_status": "ready",
         "blow_duration": 0.0,
         "blow_required_seconds": 1.0,

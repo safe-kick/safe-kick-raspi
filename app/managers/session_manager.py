@@ -117,7 +117,7 @@ class SessionManager:
     def reset_alcohol_state(required_seconds: float = 1.0):
         sensor = state.current_session["sensor"]
         sensor["mq3_baseline"] = None
-        sensor["baseline_status"] = "ready"
+        sensor["baseline_status"] = "measuring"
         sensor["blow_status"] = "ready"
         sensor["blow_duration"] = 0.0
         sensor["blow_required_seconds"] = required_seconds
