@@ -15,7 +15,7 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - 실시간 얼굴·자전거 헬멧 통합 인증
 - 사용자별 얼굴 임베딩 저장
 - 앱 인증 이후 STM32 안전 절차 자동 실행
-- 얼굴 인증과 병렬로 MQ-3 baseline 선측정
+- 얼굴·헬멧 인증 완료 후 MQ-3 baseline 자동 측정
 - HW-484(GPIO17, active-low) 호흡 지속시간 검증과 SSE 진행률
 - 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
 
@@ -24,12 +24,13 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 ```text
 Raspberry Pi 연결
   -> LOCK / LOCK_OK
-  -> 얼굴 측정 진입과 동시에 CHECK_MQ3_BASELINE
-  -> baseline을 현재 세션에 저장
-  -> 얼굴·헬멧 인증 및 음주 측정 시작 버튼 대기
+  -> 얼굴·헬멧 인증 완료 후 앱이 POST /session/mq3-baseline 자동 호출
+  -> CHECK_MQ3_BASELINE
+  -> STM32가 부저를 켜고 3.5초 동안 baseline 측정
+  -> 부저 종료 후 baseline을 현재 세션에 저장
+  -> 앱의 음주 측정 시작 버튼 활성화 및 사용자 입력 대기
   -> CHECK_MQ3_MEASURE
-  -> STM32 안내음 종료 / MEASURE_BEGIN
-  -> MQ-3 실측 + HW-484 호흡 감지
+  -> MEASURE_BEGIN / MQ-3 실측 + HW-484 호흡 감지
   -> 음주 검사 통과
   -> 무게 측정 시작 이벤트 대기
   -> CHECK_WEIGHT
