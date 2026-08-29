@@ -25,6 +25,11 @@ stability_range_kg = 5.0
 
 [weight]
 deadband_kg = 2.0
-two_person_threshold_kg = 110.0
-warning_after_seconds = 4.0
-lock_after_warning_seconds = 10.0
+baseline_delay_seconds = 5.0
+minimum_baseline_kg = 20.0
+maximum_baseline_kg = 100.0
+two_person_delta_kg = 30.0
+candidate_sample_count = 2
+clear_delta_kg = 20.0
+clear_sample_count = 2
+lock_after_warning_seconds = 5.0

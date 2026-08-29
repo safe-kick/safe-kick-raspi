@@ -2,7 +2,7 @@ import unittest
 
 from app.safety.alcohol import AlcoholPolicy
 from app.safety.blow import BlowDetector
-from app.safety.boarding import BoardingMonitor
+from app.safety.boarding import BoardingMonitor, RiderBaseline
 from app.safety.config import AlcoholConfig, AppConfig, BlowConfig, BoardingConfig, WeightConfig
 from app.safety.controller import Controller, SystemState
 from app.safety.occupancy import OccupancyAction, OccupancyMonitor
@@ -117,6 +117,30 @@ class SafetyLogicTest(unittest.TestCase):
         controller.handle(parse_line("UNLOCK_OK"))
         self.assertEqual(controller.state, SystemState.MONITORING)
 
+    def test_controller_recaptures_rider_baseline_and_uses_delta(self) -> None:
+        commands: list[str] = []
+        clock = FakeClock()
+        controller = Controller(AppConfig(), commands.append, clock)
+        controller.state = SystemState.UNLOCKING
+        controller.rider_baseline = RiderBaseline(60)
+
+        controller.handle(parse_line("UNLOCK_OK"))
+        clock.now = 5
+        controller.handle(parse_line("FL:25 FR:20 RL:15 RR:10 TOTAL:70"))
+        self.assertEqual(controller.rider_baseline.total_kg, 70)
+
+        clock.now = 6
+        controller.handle(parse_line("FL:40 FR:30 RL:20 RR:10 TOTAL:100"))
+        clock.now = 7
+        controller.handle(parse_line("FL:40 FR:30 RL:20 RR:10 TOTAL:100"))
+        self.assertEqual(controller.state, SystemState.WARNING)
+        self.assertEqual(commands[-1], "BUZZ_ON")
+
+        clock.now = 12
+        controller.handle(parse_line("FL:40 FR:30 RL:20 RR:10 TOTAL:100"))
+        self.assertEqual(controller.state, SystemState.LOCKED)
+        self.assertEqual(commands[-1], "LOCK")
+
     def test_retried_authentication_does_not_restart_alcohol_check(self) -> None:
         commands: list[str] = []
         controller = Controller(AppConfig(), commands.append)
@@ -132,24 +156,45 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertEqual(controller.state, SystemState.CHECKING_ALCOHOL)
         self.assertEqual(commands, ["LOCK", "CHECK_MQ3_BASELINE", "CHECK_MQ3_MEASURE"])
 
-    def test_sustained_two_person_weight_warns_then_locks(self) -> None:
-        monitor = OccupancyMonitor(
-            WeightConfig(
-                two_person_threshold_kg=110,
-                warning_after_seconds=4,
-                lock_after_warning_seconds=10,
-            )
-        )
-        self.assertEqual(monitor.observe(120, 0), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(120, 4), OccupancyAction.WARN)
-        self.assertEqual(monitor.observe(120, 14), OccupancyAction.LOCK)
+    def test_sustained_two_person_delta_warns_then_locks(self) -> None:
+        monitor = OccupancyMonitor(WeightConfig())
+        monitor.start(65, 0)
+
+        self.assertEqual(monitor.observe(65, 5), OccupancyAction.NONE)
+        self.assertEqual(monitor.baseline_kg, 65)
+        self.assertEqual(monitor.observe(95, 6), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(95, 7), OccupancyAction.WARN)
+        self.assertEqual(monitor.observe(95, 11), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(95, 12), OccupancyAction.LOCK)
 
     def test_two_person_warning_clears_when_weight_recovers(self) -> None:
-        monitor = OccupancyMonitor(WeightConfig(two_person_threshold_kg=110))
-        self.assertEqual(monitor.observe(120, 0), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(120, 4), OccupancyAction.WARN)
-        self.assertEqual(monitor.observe(80, 5), OccupancyAction.CLEAR_WARNING)
-        self.assertEqual(monitor.observe(120, 6), OccupancyAction.NONE)
+        monitor = OccupancyMonitor(WeightConfig())
+        monitor.start(65, 0)
+        monitor.observe(65, 5)
+
+        self.assertEqual(monitor.observe(95, 6), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(95, 7), OccupancyAction.WARN)
+        self.assertEqual(monitor.observe(85, 8), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(85, 9), OccupancyAction.CLEAR_WARNING)
+        self.assertEqual(monitor.observe(95, 10), OccupancyAction.NONE)
+
+    def test_ride_baseline_uses_first_valid_sample_after_five_seconds(self) -> None:
+        monitor = OccupancyMonitor(WeightConfig())
+        monitor.start(60, 0)
+
+        monitor.observe(70, 4.9)
+        self.assertEqual(monitor.baseline_kg, 60)
+        monitor.observe(10, 5)
+        self.assertEqual(monitor.baseline_kg, 60)
+        monitor.observe(72, 6)
+        self.assertEqual(monitor.baseline_kg, 72)
+
+    def test_zero_weight_does_not_create_a_lock_action(self) -> None:
+        monitor = OccupancyMonitor(WeightConfig())
+        monitor.start(65, 0)
+
+        for second in range(1, 20):
+            self.assertEqual(monitor.observe(0, second), OccupancyAction.NONE)
 
     def test_unsafe_alcohol_result_keeps_vehicle_locked(self) -> None:
         commands: list[str] = []

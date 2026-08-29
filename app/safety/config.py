@@ -41,9 +41,14 @@ class BoardingConfig:
 @dataclass(frozen=True)
 class WeightConfig:
     deadband_kg: float = 2.0
-    two_person_threshold_kg: float = 110.0
-    warning_after_seconds: float = 4.0
-    lock_after_warning_seconds: float = 10.0
+    baseline_delay_seconds: float = 5.0
+    minimum_baseline_kg: float = 20.0
+    maximum_baseline_kg: float = 100.0
+    two_person_delta_kg: float = 30.0
+    candidate_sample_count: int = 2
+    clear_delta_kg: float = 20.0
+    clear_sample_count: int = 2
+    lock_after_warning_seconds: float = 5.0
 
 
 @dataclass(frozen=True)
@@ -136,5 +141,15 @@ def _validate(config: AppConfig) -> None:
         raise ValueError("boarding rider weight range is invalid")
     if config.boarding.stability_range_kg <= 0:
         raise ValueError("boarding.stability_range_kg must be positive")
-    if config.weight.two_person_threshold_kg <= config.weight.deadband_kg:
-        raise ValueError("weight.two_person_threshold_kg must exceed deadband_kg")
+    if config.weight.baseline_delay_seconds < 0:
+        raise ValueError("weight.baseline_delay_seconds must not be negative")
+    if config.weight.minimum_baseline_kg >= config.weight.maximum_baseline_kg:
+        raise ValueError("weight baseline range is invalid")
+    if config.weight.two_person_delta_kg <= config.weight.clear_delta_kg:
+        raise ValueError("weight.two_person_delta_kg must exceed clear_delta_kg")
+    if config.weight.candidate_sample_count <= 0:
+        raise ValueError("weight.candidate_sample_count must be positive")
+    if config.weight.clear_sample_count <= 0:
+        raise ValueError("weight.clear_sample_count must be positive")
+    if config.weight.lock_after_warning_seconds <= 0:
+        raise ValueError("weight.lock_after_warning_seconds must be positive")

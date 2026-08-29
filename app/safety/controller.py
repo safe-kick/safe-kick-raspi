@@ -154,7 +154,11 @@ class Controller:
                 self._finish_alcohol_check()
         elif message_type is MessageType.UNLOCK_OK:
             self.state = SystemState.MONITORING
-            self._occupancy.reset()
+            if self.rider_baseline is None:
+                self.state = SystemState.FAULT
+                self._send("LOCK")
+            else:
+                self._occupancy.start(self.rider_baseline.total_kg, self._clock())
         elif message_type is MessageType.WEIGHT_SAMPLE:
             if self.state is SystemState.CHECKING_RIDER:
                 self._handle_boarding(message.value)
@@ -239,6 +243,8 @@ class Controller:
             self._send("LOCK")
             return
         action = self._occupancy.observe(value.total, now)
+        if self._occupancy.baseline_kg is not None:
+            self.rider_baseline = RiderBaseline(self._occupancy.baseline_kg)
         if action is OccupancyAction.WARN:
             self.state = SystemState.WARNING
             self._send("BUZZ_ON")
