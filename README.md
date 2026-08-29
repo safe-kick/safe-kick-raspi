@@ -15,7 +15,7 @@ FastAPI를 기반으로 다음 기능을 담당합니다.
 - 실시간 얼굴·자전거 헬멧 통합 인증
 - 사용자별 얼굴 임베딩 저장
 - 앱 인증 이후 STM32 안전 절차 자동 실행
-- 얼굴·헬멧 인증 완료 후 MQ-3 baseline 자동 측정
+- 얼굴·헬멧 인증 완료 후 앱 요청에 따른 MQ-3 baseline 측정
 - HW-484(GPIO17, active-low) 호흡 지속시간 검증과 SSE 진행률
 - 주행 전 1인 탑승 확인 및 주행 중 2인 탑승 감시
 
@@ -45,7 +45,7 @@ Raspberry Pi 연결
 
 `/unlock` 직접 호출은 기본적으로 차단됩니다. 하드웨어 테스트에서만
 `ALLOW_MANUAL_UNLOCK=true`를 설정해 사용합니다. UART 장비 없이 API 흐름을
-시험할 때는 기본값인 `USE_UART_MOCK=true`를 사용하고, 실제 연결 시
+시험할 때는 `USE_UART_MOCK=true`를 명시하고, 실제 연결 시
 `USE_UART_MOCK=false`와 `SERIAL_PORT=/dev/serial0`을 설정합니다.
 
 ### MQ-3 음주 판정 기준
@@ -329,6 +329,8 @@ GET /status
 ```http
 POST /session/start
 GET /session/stream
+POST /session/mq3-baseline
+POST /session/alcohol-check
 POST /session/weight-check
 POST /session/end
 GET /session/summary?session_id={id}
@@ -339,6 +341,7 @@ GET /session/summary?session_id={id}
 - 운행 세션 시작
 - 운행 세션 종료
 - 현재 센서 상태 SSE 전송
+- MQ-3 baseline 측정과 실제 음주·호흡 검사 시작
 - 운행 요약 조회
 - 경고 횟수 및 경고 사유 관리
 
@@ -354,9 +357,12 @@ POST /unlock
 ### 주요 기능
 
 - 이상 상태 발생 시 킥보드 잠금
-- 정상 상태 복구 후 잠금 해제
+- 얼굴·헬멧·음주·호흡·1인 탑승 검사를 모두 통과한 뒤 잠금 해제
 - 잠금 사유 및 상태 변경
 - SSE를 통한 프론트 실시간 반영
+
+`POST /unlock` 직접 호출은 기본적으로 `ALLOW_MANUAL_UNLOCK=false`에 의해
+차단됩니다. 정상 운행에서는 안전 상태 머신이 STM32의 `UNLOCK_OK`까지 확인합니다.
 
 ---
 
@@ -377,8 +383,10 @@ Content-Type: application/json
 ```
 
 한 프레임에서 저장된 면허증 임베딩과 현재 얼굴을 비교하고 Roboflow 모델로
-헬멧을 확인합니다. 얼굴과 헬멧이 모두 통과한 경우에만 기존 STM32 안전 점검을
-시작합니다. 프레임 실패는 수동 `/face/verify`의 재시도 횟수에 포함되지 않습니다.
+헬멧을 확인합니다. 얼굴과 헬멧이 모두 통과하면 현재 세션의 인증 상태를 갱신하며,
+앱은 이후 `/session/mq3-baseline`과 `/session/alcohol-check`를 순서대로 호출해
+STM32 안전 점검을 진행합니다. 프레임 실패는 수동 `/face/verify`의 재시도 횟수에
+포함되지 않습니다.
 통합 인증의 PASS와 FAIL은 모두 HTTP 200으로 반환하며, 앱은 응답의
 `data.verified`, `data.face_verified`, `data.helmet_verified`로 현재 프레임의
 판정 상태를 갱신해야 합니다. 실제 API 접근 권한 오류는 별도의 HTTP 401입니다.
@@ -749,11 +757,11 @@ Raspberry Pi
 STM32 Nucleo-F411RE
 ```
 
-STM32는 MQ-3 알코올 센서, 무게 센서, 릴레이, LED, 부저 등의 하드웨어를 제어합니다.
+STM32는 MQ-3 알코올 센서, 무게 센서, 릴레이, 부저와 모터 PWM을 제어합니다.
 
 ## `kickserial` 간단 설정
 
-프로젝트 경로가 `~/safe-kick-raspi-team`인 경우 다음 설정만 추가합니다.
+프로젝트 경로가 `~/safe-kick-raspi`인 경우 다음 설정만 추가합니다.
 
 `~/.safe-kick-aliases`:
 
@@ -761,7 +769,7 @@ STM32는 MQ-3 알코올 센서, 무게 센서, 릴레이, LED, 부저 등의 하
 unalias kickserial 2>/dev/null
 
 kickserial() {
-    cd ~/safe-kick-raspi-team || return
+    cd ~/safe-kick-raspi || return
     .venv/bin/python tools/stm32_menu.py --port /dev/serial/by-id/usb-STMicroelectronics_STM32_STLink_066FFF505567494867085224-if01
 }
 ```
@@ -790,9 +798,9 @@ kickserial
 ### 1. 최신 테스트 메뉴 받기
 
 ```bash
-cd ~/safe-kick-raspi-team
-git switch pjb-add-motor
-git pull origin pjb-add-motor
+cd ~/safe-kick-raspi
+git switch main
+git pull origin main
 ```
 
 ### 2. 서버 종료 및 UART 점유 확인
@@ -819,12 +827,12 @@ kickserial
 | `1` | 무게 측정 중지 | `STOP_WEIGHT` |
 | `2` | MQ-3 원시값 연속 측정 시작 | `TEST_MQ3` |
 | `3` | MQ-3 원시값 연속 측정 중지 | `STOP_TEST_MQ3` |
-| `4` | MQ-3 음주 판정 시퀀스 실행 | `CHECK_MQ3` |
+| `4` | MQ-3 통합 호환 시험 실행 | `CHECK_MQ3` |
 | `5` | 모터 상태 확인 | `MOTOR_STATE` |
 | `6` | 모터 잠금 및 릴레이 차단 | `LOCK` |
-| `7` | 모터 잠금 해제 및 점진 가속 | `UNLOCK` |
-| `8` | 부저 켜기 및 모터 감속 | `BUZZ_ON` |
-| `9` | 부저 끄기 및 모터 속도 복구 | `BUZZ_OFF` |
+| `7` | 릴레이 ON 및 PWM 0% 대기 | `UNLOCK` |
+| `8` | 부저 및 목표 PWM 최대 30% 제한 | `BUZZ_ON` |
+| `9` | 부저 정지 및 하중 기반 제어 재개 | `BUZZ_OFF` |
 | `h` | 메뉴 다시 표시 | - |
 | `q` | UART 메뉴 종료 | - |
 
@@ -876,8 +884,9 @@ MQ3:2985
 MQ3:3897
 ```
 
-`3`을 입력하면 원시값 연속 측정이 중지됩니다. 실제 음주 판정용 기준값 및 표본
-측정은 `4`를 입력합니다.
+`3`을 입력하면 원시값 연속 측정이 중지됩니다. 메뉴의 `4`번은 기준값과 실측을
+한 번에 수행하는 하위 호환 시험입니다. 실제 앱 흐름에서는
+`CHECK_MQ3_BASELINE`과 `CHECK_MQ3_MEASURE`를 분리해 실행합니다.
 
 ```text
 [CHECK_MQ3]
@@ -887,8 +896,9 @@ MQ3:70
 [END_MQ3]
 ```
 
-판정에는 총 8개 샘플을 사용하며, `sample - baseline >= 100`인 값이 3회 연속
-발생하면 음주 감지로 처리합니다.
+판정에는 총 8개 ADC 원시 샘플을 사용합니다. `sample - baseline >= 2000`인
+값이 3회 연속 발생하거나, 원시 샘플 하나라도 `1500`을 초과하면 음주 감지로
+처리합니다. 이 값은 ppm 환산값이 아닙니다.
 
 실제 시험에서는 낮은 원시값 구간에서 센서 반응 후 최대 `3897`까지 상승하는
 연속 표본을 확인했습니다.
@@ -899,31 +909,18 @@ MQ3:70
 
 모터 시험 전 구동 바퀴가 지면에 닿지 않았는지 다시 확인합니다.
 
-1. `6`을 입력해 잠금 상태로 시작합니다.
-2. `5`를 입력해 `MOTOR:LOCKED SPEED:0`인지 확인합니다.
-3. `7`을 입력해 잠금을 해제하고 점진 가속을 확인합니다.
-4. 약 4초 후 `5`를 입력해 `MOTOR:UNLOCKED SPEED:70`인지 확인합니다.
-5. `8`을 입력해 부저와 감속을 확인합니다.
-6. 약 2초 후 `5`를 입력해 `MOTOR:UNLOCKED SPEED:30`인지 확인합니다.
-7. `9`를 입력해 부저 정지와 속도 복구를 확인합니다.
-8. 시험이 끝나면 반드시 `6`을 입력해 릴레이와 모터 출력을 차단합니다.
-
-실제 테스트 결과:
-
-```text
-5 -> MOTOR:LOCKED SPEED:0
-7 -> UNLOCK_OK
-5 -> MOTOR:UNLOCKED SPEED:67
-5 -> MOTOR:UNLOCKED SPEED:70
-8 -> BUZZ_ON
-5 -> MOTOR:UNLOCKED SPEED:30
-9 -> BUZZ_OFF
-5 -> MOTOR:UNLOCKED SPEED:70
-6 -> LOCK_OK
-```
-
-점진 가속 중 속도 67을 거쳐 목표 속도 70에 도달했고, 경고 시 30으로 감속한 뒤
-경고 해제 시 70으로 복구되었습니다. 마지막 `LOCK` 응답까지 정상 확인했습니다.
+1. `6`과 `5`를 차례로 입력해 `MOTOR:LOCKED SPEED:0`인지 확인합니다.
+2. `0`으로 무게 스트림을 시작하고 한 명이 탑승한 상태인지 확인합니다.
+3. `7`을 입력합니다. `UNLOCK_OK` 후 릴레이는 켜지지만 PWM은 0%로 대기합니다.
+4. 전방 하중 비율이 70% 이상인 표본이 2회 연속 들어오면 PWM이 30%에서
+   시작하는지 확인합니다.
+5. 전·후방 하중 이동에 따라 목표 PWM이 30~70% 범위에서 초당 5%씩 변하는지
+   확인합니다.
+6. `8`을 입력해 부저가 켜지고 목표 PWM이 최대 30%로 제한되는지 확인합니다.
+7. `9`를 입력해 부저가 꺼지고 하중 기반 제어가 재개되는지 확인합니다.
+8. 발판에서 내리면 PWM은 0%가 되지만 릴레이와 무게 스트림은 유지되는지
+   확인합니다.
+9. 시험이 끝나면 반드시 `6`을 입력해 릴레이, PWM, 스트림을 모두 정지합니다.
 
 ### 7. 안전 종료
 
@@ -1065,12 +1062,15 @@ http://100.115.171.90:8000/docs
 
 ## Node.js 운행 종료 요약 연동
 
-`NODE_SUMMARY_URL`이 설정되어 있으면 `POST /session/end` 처리 후 Node.js로
-운행 요약을 전송합니다. 전송 실패가 라즈베리파이의 로컬 세션 종료를 취소하지는
-않으며, API 응답의 `data.backend_sync`에서 성공 또는 실패를 확인할 수 있습니다.
+`NODE_SUMMARY_URL`이 설정되어 있으면 `POST /session/end` 처리 후 지정한 수신기로
+운행 요약을 전송할 수 있습니다. 현재 `safe-kick-server`에는 이 요약 전용 수신
+API가 없으므로 기본값은 비워 둡니다. 앱은 라즈베리파이 세션을 종료한 뒤 별도로
+Node.js의 `PATCH /rides/:rideId/end`를 호출합니다. 전송 옵션을 사용하는 경우에도
+실패가 로컬 세션 종료를 취소하지는 않으며, 응답의 `data.backend_sync`에서 결과를
+확인할 수 있습니다.
 
 ```env
-NODE_SUMMARY_URL=http://node-server:3000/api/rides/summary
+NODE_SUMMARY_URL=
 NODE_SUMMARY_TOKEN=replace-with-backend-token
 NODE_SUMMARY_TIMEOUT_SECONDS=3
 ```
@@ -1210,10 +1210,8 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 
 ---
 
-# 🔜 다음 구현 및 개선 예정
+# 🔐 운영 배포 전 선택 보강 항목
 
-- 실제 장비에서 `scripts/verify_stm32_uart.py` 검증 완료
-- 얼굴 등록 실패 시 프론트 면허증 재촬영 흐름 적용
 - 운영 환경 비밀 관리 시스템에 내부 API 키와 Node.js 토큰 등록
 - 네트워크 장애 시 Node.js 요약 전송 재시도 큐 추가
 - 필요 시 OS 파일 권한 보호에 더해 임베딩 저장 암호화 적용
