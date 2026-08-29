@@ -18,7 +18,7 @@ class AlcoholConfig:
     minimum_delta: int = 2000
     required_positive_samples: int = 3
     minimum_sample_count: int = 8
-    absolute_threshold: int = 1000
+    absolute_threshold: int = 1500
 
 
 @dataclass(frozen=True)
