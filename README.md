@@ -37,6 +37,7 @@ Raspberry Pi 연결
   -> 최근 3회 무게가 20~100kg, 편차 5kg 이내인지 확인
   -> UNLOCK / UNLOCK_OK
   -> 주행 중 무게 감시
+  -> TOTAL 1kg 미만의 센서 노이즈는 0kg으로 정규화
   -> 110kg 이상 4초 지속: BUZZ_ON
   -> 추가 10초 지속: LOCK
 ```

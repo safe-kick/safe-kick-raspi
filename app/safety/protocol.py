@@ -68,6 +68,7 @@ _WEIGHT_PATTERN = re.compile(
 _MOTOR_STATE_PATTERN = re.compile(
     r"MOTOR:(?P<state>LOCKED|UNLOCKED)\s+SPEED:(?P<speed>\d+)"
 )
+MINIMUM_WEIGHT_KG = 1.0
 
 
 def parse_line(line: str) -> Message:
@@ -119,6 +120,8 @@ def parse_line(line: str) -> Message:
     match = _WEIGHT_PATTERN.fullmatch(raw)
     if match:
         values = {name: float(value) for name, value in match.groupdict().items()}
+        if values["total"] < MINIMUM_WEIGHT_KG:
+            values["total"] = 0.0
         return Message(MessageType.WEIGHT_SAMPLE, raw, WeightReading(**values))
     return Message(MessageType.UNKNOWN, raw)
 

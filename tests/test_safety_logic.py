@@ -62,6 +62,14 @@ class SafetyLogicTest(unittest.TestCase):
         message = parse_line("FL:-0.01 FR:+0.01 RL:0.00 RR:-0.00 TOTAL:0.00")
         self.assertEqual(message.type, MessageType.WEIGHT_SAMPLE)
         self.assertEqual(message.value.fl, -0.01)
+        self.assertEqual(message.value.total, 0.0)
+
+    def test_protocol_treats_total_weight_below_one_kg_as_zero(self) -> None:
+        below = parse_line("FL:0.25 FR:0.25 RL:0.24 RR:0.25 TOTAL:0.99")
+        boundary = parse_line("FL:0.25 FR:0.25 RL:0.25 RR:0.25 TOTAL:1.00")
+
+        self.assertEqual(below.value.total, 0.0)
+        self.assertEqual(boundary.value.total, 1.0)
 
     def test_protocol_parses_motor_state(self) -> None:
         message = parse_line("MOTOR:UNLOCKED SPEED:42")
