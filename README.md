@@ -303,8 +303,9 @@ React Native 앱
 
 - 면허증 원본 이미지는 Node.js 백엔드에 저장하지 않습니다.
 - 프론트엔드는 면허증 이미지를 Base64 문자열로 변환하여 Raspberry Pi로 직접 전송합니다.
-- Raspberry Pi는 원본 이미지 대신 얼굴 특징값인 임베딩을 저장합니다.
-- 사용자별 임베딩은 다음 경로에 저장됩니다.
+- Raspberry Pi는 원본 이미지를 저장하지 않고 얼굴 특징값인 임베딩을 추출합니다.
+- `NODE_FACE_EMBEDDING_URL`을 설정하면 임베딩은 Node 서버를 통해 암호화되어
+  PostgreSQL에 저장됩니다. 설정하지 않은 개발 환경에서만 다음 로컬 경로를 사용합니다.
 
 ```text
 db/users/{user_id}/license_embedding.npy
@@ -637,7 +638,8 @@ FACE_MATCH_THRESHOLD=0.30
 
 ### 사용자 탈퇴 시 임베딩 삭제
 
-Node.js 백엔드는 사용자 탈퇴 처리 중 다음 내부 API를 호출합니다.
+사용자 탈퇴 처리 중 Raspberry Pi API를 거치거나 Node 내부 API에서 직접
+임베딩을 삭제할 수 있습니다.
 
 ```http
 DELETE /face/embedding/{user_id}
@@ -650,9 +652,8 @@ X-Internal-Api-Key: {INTERNAL_API_KEY}
 INTERNAL_API_KEY=replace-with-a-long-random-secret
 ```
 
-임베딩 디렉터리는 소유자만 접근 가능한 `0700`, 파일은 `0600` 권한으로
-원자적으로 저장됩니다. 저장 위치는 필요할 때 `FACE_EMBEDDING_DIR`로 변경할 수
-있습니다.
+`NODE_FACE_EMBEDDING_URL`을 사용하지 않는 개발 모드에서는 임베딩 디렉터리를
+`0700`, 파일을 `0600` 권한으로 원자적으로 저장합니다.
 
 ---
 
@@ -1194,10 +1195,11 @@ data.reason
 → 얼굴 임베딩 추출 후 요청 처리 종료
 
 저장 데이터
-→ 원본 이미지가 아닌 얼굴 임베딩 파일
+→ 원본 이미지가 아닌 얼굴 임베딩
+→ Node 서버에서 AES-256-GCM 암호화 후 PostgreSQL 저장
 ```
 
-Node.js 백엔드에는 다음 정보만 저장합니다.
+Node.js 백엔드에는 다음 정보를 저장합니다.
 
 - 사용자 계정
 - 이름
@@ -1205,8 +1207,10 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 - 비밀번호 해시
 - 면허 번호
 - 면허 만료일
+- 암호화된 얼굴 임베딩과 모델 정보
 
-라즈베리파이에는 사용자별 얼굴 임베딩을 저장합니다.
+라즈베리파이는 QR 인증으로 생성된 활성 운행이 있고 `KICKBOARD_DEVICE_ID`가
+일치할 때만 임베딩을 조회하며, 얼굴 비교 중 메모리에서만 사용합니다.
 
 ---
 
@@ -1214,4 +1218,4 @@ Node.js 백엔드에는 다음 정보만 저장합니다.
 
 - 운영 환경 비밀 관리 시스템에 내부 API 키와 Node.js 토큰 등록
 - 네트워크 장애 시 Node.js 요약 전송 재시도 큐 추가
-- 필요 시 OS 파일 권한 보호에 더해 임베딩 저장 암호화 적용
+- 운영 환경 비밀 관리 시스템으로 임베딩 암호화 키 이전

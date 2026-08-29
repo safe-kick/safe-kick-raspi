@@ -40,7 +40,7 @@ class FaceService:
 
     def get_license_embedding_path(self, user_id: int):
         """
-        사용자별 면허증 얼굴 embedding 저장 경로를 반환한다.
+        사용자별 면허증 얼굴 embedding 저장 위치를 반환한다.
 
         예:
         db/users/1/license_embedding.npy
@@ -158,11 +158,11 @@ class FaceService:
                 "reason": "face_not_detected"
             }
 
-        embedding_path = embedding_store.save(user_id, embedding)
+        embedding_location = embedding_store.save(user_id, embedding)
 
         print("[FACE] 면허증 얼굴 embedding 저장 완료")
         print(f"[FACE] user_id: {user_id}")
-        print(f"[FACE] 경로: {embedding_path}")
+        print(f"[FACE] 저장 위치: {embedding_location}")
 
         return {
             "registered": True,
@@ -237,7 +237,8 @@ class FaceService:
         return {
             "match": match,
             "confidence": similarity,
-            "face_vector": current_embedding.tolist(),
+            # 생체정보가 API 응답이나 프론트 로그에 남지 않도록 반환하지 않는다.
+            "face_vector": [],
             "reason": (
                 "success"
                 if match

@@ -1,4 +1,5 @@
 import os
+import json
 import stat
 import tempfile
 import unittest
@@ -10,7 +11,7 @@ import numpy as np
 from app import db
 from app.managers.session_manager import SessionManager
 from app.routes.face import FaceVerifyRequest, verify_face
-from app.services.embedding_store import EmbeddingStore
+from app.services.embedding_store import EmbeddingStore, NodeEmbeddingStore
 from app.services.face_attempt_service import FaceAttemptService, face_attempt_service
 from app.services.safety_service import safety_service
 
@@ -59,6 +60,48 @@ class FaceSecurityTest(unittest.TestCase):
         np.testing.assert_array_equal(store.load(3), expected)
         self.assertTrue(store.delete(3))
         self.assertFalse(store.delete(3))
+
+    def test_node_embedding_store_sends_device_identity_and_loads_vector(self) -> None:
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return json.dumps({
+                    "status": "success",
+                    "data": {
+                        "embedding": [0.1, 0.2],
+                        "dimension": 2,
+                        "model_name": "buffalo_sc",
+                    },
+                }).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        environment = {
+            "INTERNAL_API_KEY": "internal-secret",
+            "KICKBOARD_DEVICE_ID": "RPI-001",
+            "NODE_EMBEDDING_TIMEOUT_SECONDS": "2.5",
+        }
+        with patch.dict(os.environ, environment, clear=True), patch(
+            "app.services.embedding_store.urlopen",
+            side_effect=fake_urlopen,
+        ):
+            store = NodeEmbeddingStore("https://node.test/internal/face-embeddings")
+            embedding = store.load(7)
+
+        np.testing.assert_allclose(embedding, np.array([0.1, 0.2], dtype=np.float32))
+        self.assertEqual(captured["timeout"], 2.5)
+        self.assertEqual(captured["request"].get_header("X-device-id"), "RPI-001")
+        self.assertEqual(captured["request"].get_header("X-internal-api-key"), "internal-secret")
 
     def test_face_success_resets_failures_without_starting_safety_check(self) -> None:
         safety_service.start()

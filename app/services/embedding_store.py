@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import tempfile
+import json
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import numpy as np
 
@@ -71,4 +74,80 @@ class EmbeddingStore:
         return True
 
 
-embedding_store = EmbeddingStore()
+class NodeEmbeddingStore:
+    """Store encrypted embeddings in the Node/PostgreSQL backend."""
+
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = os.getenv("INTERNAL_API_KEY", "").strip()
+        self.device_id = os.getenv("KICKBOARD_DEVICE_ID", "").strip()
+        self.timeout = float(os.getenv("NODE_EMBEDDING_TIMEOUT_SECONDS", "3"))
+
+    def path_for(self, user_id: int) -> str:
+        if user_id <= 0:
+            raise ValueError("user_id must be positive")
+        return f"{self.base_url}/{user_id}"
+
+    def _request(self, user_id: int, method: str, payload: dict | None = None):
+        headers = {
+            "Accept": "application/json",
+            "X-Internal-Api-Key": self.api_key,
+        }
+        if method == "GET":
+            headers["X-Device-Id"] = self.device_id
+        data = None
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(payload).encode("utf-8")
+        request = Request(self.path_for(user_id), data=data, headers=headers, method=method)
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            if error.code == 404:
+                return None
+            raise RuntimeError(
+                f"Node embedding API returned HTTP {error.code}"
+            ) from error
+        except (URLError, OSError, ValueError) as error:
+            raise RuntimeError("Node embedding API request failed") from error
+
+    def save(self, user_id: int, embedding: np.ndarray) -> str:
+        vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
+        response = self._request(
+            user_id,
+            "PUT",
+            {"embedding": vector.tolist(), "model_name": "buffalo_sc"},
+        )
+        if response is None or response.get("status") != "success":
+            raise RuntimeError("Node embedding API did not save the embedding")
+        return self.path_for(user_id)
+
+    def load(self, user_id: int) -> np.ndarray | None:
+        response = self._request(user_id, "GET")
+        if response is None:
+            return None
+        data = response.get("data") or {}
+        if data.get("model_name") != "buffalo_sc":
+            raise RuntimeError("Stored face model does not match buffalo_sc")
+        embedding = data.get("embedding")
+        dimension = data.get("dimension")
+        if not isinstance(embedding, list) or len(embedding) != dimension:
+            raise RuntimeError("Node embedding API returned an invalid embedding")
+        return np.asarray(embedding, dtype=np.float32)
+
+    def delete(self, user_id: int) -> bool:
+        response = self._request(user_id, "DELETE")
+        if response is None:
+            return False
+        return bool((response.get("data") or {}).get("deleted"))
+
+
+def _create_embedding_store():
+    node_url = os.getenv("NODE_FACE_EMBEDDING_URL", "").strip()
+    if node_url:
+        return NodeEmbeddingStore(node_url)
+    return EmbeddingStore()
+
+
+embedding_store = _create_embedding_store()
