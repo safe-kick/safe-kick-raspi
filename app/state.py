@@ -18,6 +18,9 @@ current_session = {
         "blow_required_seconds": 1.0,
         "blow_progress": 0.0,
         "hw484_blow_detected": False,
+        "blow_monitoring": False,
+        "blow_signal_seen": False,
+        "blow_error": None,
     },
     "warning": {
         "count": 0,

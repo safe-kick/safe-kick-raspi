@@ -173,6 +173,12 @@ class Controller:
         self._send("UNLOCK")
 
     def start_rider_check(self) -> bool:
+        if self.state is SystemState.CHECKING_RIDER:
+            # The weight stream is already running. A retry only needs to
+            # discard the previous unstable/overweight sample window.
+            self._boarding.reset()
+            self.rider_baseline = None
+            return True
         if self.state is not SystemState.WAITING_RIDER:
             self._logger.warning("Ignoring weight check in state %s", self.state.name)
             return False

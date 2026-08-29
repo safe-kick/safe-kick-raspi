@@ -199,6 +199,18 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertEqual(commands.count("CHECK_MQ3_BASELINE"), 1)
         self.assertEqual(commands.count("CHECK_MQ3_MEASURE"), 2)
 
+    def test_rider_check_retry_resets_samples_without_restarting_stream(self) -> None:
+        commands: list[str] = []
+        controller = Controller(AppConfig(), commands.append)
+        controller.state = SystemState.WAITING_RIDER
+
+        self.assertTrue(controller.start_rider_check())
+        controller.handle(parse_line("FL:30 FR:30 RL:30 RR:30 TOTAL:120"))
+        self.assertTrue(controller.start_rider_check())
+
+        self.assertEqual(controller.state, SystemState.CHECKING_RIDER)
+        self.assertEqual(commands.count("CHECK_WEIGHT"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

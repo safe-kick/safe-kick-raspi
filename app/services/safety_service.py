@@ -200,6 +200,7 @@ class SafetyService:
             if self._motor_state is not None
             else None
         )
+        data["blow_diagnostics"] = self._blow_service.diagnostics
         result = self.controller.last_alcohol_result
         data["alcohol_result"] = (
             {
@@ -259,15 +260,21 @@ class SafetyService:
             elif message.type is MessageType.MQ3_BASELINE:
                 self._logger.info("[BASELINE] value=%s", message.value)
             elif message.type is MessageType.MQ3_MEASURE_START:
+                SessionManager.stop_blow_monitoring(clear_error=True)
                 SessionManager.update_blow(
                     "buzzer", 0.0, self.config.blow.minimum_seconds, 0.0, False
                 )
                 self._logger.info("[ALCOHOL] waiting for STM32 buzzer")
             elif message.type is MessageType.MEASURE_BEGIN:
                 self._logger.info("[ALCOHOL] MEASURE_BEGIN")
-                self._blow_service.start(self._on_blow_reading)
+                SessionManager.start_blow_monitoring()
+                self._blow_service.start(
+                    self._on_blow_reading,
+                    self._on_blow_error,
+                )
             elif message.type in {MessageType.MQ3_MEASURE_END, MessageType.MQ3_END}:
                 self.controller.set_hw484_result(self._blow_service.stop())
+                SessionManager.stop_blow_monitoring()
 
             if message.type is MessageType.WEIGHT_SAMPLE and isinstance(message.value, WeightReading):
                 SessionManager.update_weight(message.value.total)
@@ -352,6 +359,9 @@ class SafetyService:
             reading.progress,
             reading.detected,
         )
+
+    def _on_blow_error(self, error: str) -> None:
+        SessionManager.stop_blow_monitoring(error)
 
     def _start_baseline_timer(self) -> None:
         self._cancel_baseline_timer()

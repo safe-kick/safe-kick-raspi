@@ -24,19 +24,45 @@ class BlowService:
         self._detector = BlowDetector(config)
         self._last_reading = self._detector.reset()
         self._callback: Callable[[BlowReading], None] | None = None
+        self._error_callback: Callable[[str], None] | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._device = None
+        self._monitoring = False
+        self._last_active_low: bool | None = None
+        self._signal_seen = False
+        self._last_error: str | None = None
         self._logger = logging.getLogger(__name__)
 
     @property
     def detected(self) -> bool:
         return self._last_reading.detected
 
-    def start(self, callback: Callable[[BlowReading], None]) -> None:
+    @property
+    def diagnostics(self) -> dict:
+        return {
+            "gpio": self.config.gpio,
+            "active_low": True,
+            "monitoring": self._monitoring,
+            "last_signal_active": self._last_active_low,
+            "signal_seen": self._signal_seen,
+            "last_error": self._last_error,
+            "using_mock": self.use_mock,
+        }
+
+    def start(
+        self,
+        callback: Callable[[BlowReading], None],
+        error_callback: Callable[[str], None] | None = None,
+    ) -> None:
         self.stop()
         self._callback = callback
+        self._error_callback = error_callback
         self._last_reading = self._detector.reset()
+        self._last_active_low = None
+        self._signal_seen = False
+        self._last_error = None
+        self._monitoring = True
         self._stop.clear()
         callback(self._last_reading)
         self._logger.info(
@@ -57,6 +83,7 @@ class BlowService:
         if self._thread and self._thread is not threading.current_thread():
             self._thread.join(timeout=1)
         self._thread = None
+        self._monitoring = False
         return self._last_reading.detected
 
     def close(self) -> None:
@@ -82,7 +109,10 @@ class BlowService:
         try:
             while not self._stop.is_set():
                 now = self._clock()
-                reading = self._detector.observe(self._read_active_low(), now)
+                active_low = self._read_active_low()
+                self._last_active_low = active_low
+                self._signal_seen = self._signal_seen or active_low
+                reading = self._detector.observe(active_low, now)
                 self._last_reading = reading
                 if self._callback is not None:
                     self._callback(reading)
@@ -105,4 +135,9 @@ class BlowService:
                     return
                 self._stop.wait(self.config.poll_interval_seconds)
         except Exception:
+            self._last_error = "gpio_read_failed"
+            if self._error_callback is not None:
+                self._error_callback(self._last_error)
             self._logger.exception("[BLOW] GPIO monitoring failed")
+        finally:
+            self._monitoring = False

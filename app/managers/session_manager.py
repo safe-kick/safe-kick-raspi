@@ -123,6 +123,26 @@ class SessionManager:
         sensor["blow_required_seconds"] = required_seconds
         sensor["blow_progress"] = 0.0
         sensor["hw484_blow_detected"] = False
+        sensor["blow_monitoring"] = False
+        sensor["blow_signal_seen"] = False
+        sensor["blow_error"] = None
+
+    @staticmethod
+    def start_blow_monitoring():
+        sensor = state.current_session["sensor"]
+        sensor["blow_monitoring"] = True
+        sensor["blow_signal_seen"] = False
+        sensor["blow_error"] = None
+
+    @staticmethod
+    def stop_blow_monitoring(
+        error: str | None = None,
+        clear_error: bool = False,
+    ):
+        sensor = state.current_session["sensor"]
+        sensor["blow_monitoring"] = False
+        if error is not None or clear_error:
+            sensor["blow_error"] = error
 
     @staticmethod
     def set_baseline_status(status: str, value: int | None = None):
@@ -153,6 +173,8 @@ class SessionManager:
         sensor["blow_required_seconds"] = required_seconds
         sensor["blow_progress"] = progress
         sensor["hw484_blow_detected"] = detected
+        if status in {"blowing", "success"}:
+            sensor["blow_signal_seen"] = True
 
     @staticmethod
     def get_session_id():
@@ -199,6 +221,9 @@ class SessionManager:
             "blow_required_seconds": state.current_session["sensor"]["blow_required_seconds"],
             "blow_progress": state.current_session["sensor"]["blow_progress"],
             "hw484_blow_detected": state.current_session["sensor"]["hw484_blow_detected"],
+            "blow_monitoring": state.current_session["sensor"]["blow_monitoring"],
+            "blow_signal_seen": state.current_session["sensor"]["blow_signal_seen"],
+            "blow_error": state.current_session["sensor"]["blow_error"],
             "is_two_person": state.current_session["warning"]["is_two_person"],
             "is_drunk": state.current_session["warning"]["is_drunk"],
             "is_locked": state.current_session["device"]["is_locked"],
@@ -227,4 +252,7 @@ class SessionManager:
             "blow_required_seconds": state.current_session["sensor"]["blow_required_seconds"],
             "blow_progress": state.current_session["sensor"]["blow_progress"],
             "hw484_blow_detected": state.current_session["sensor"]["hw484_blow_detected"],
+            "blow_monitoring": state.current_session["sensor"]["blow_monitoring"],
+            "blow_signal_seen": state.current_session["sensor"]["blow_signal_seen"],
+            "blow_error": state.current_session["sensor"]["blow_error"],
         }

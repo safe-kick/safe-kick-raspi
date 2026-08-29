@@ -49,6 +49,9 @@ class SafetyServiceTest(unittest.TestCase):
         self.assertEqual(SessionManager.get_sensor_data()["weight"], 65.0)
         self.assertFalse(safety_service.status()["alcohol_result"]["unsafe"])
         self.assertEqual(len(safety_service.status()["alcohol_result"]["samples"]), 8)
+        self.assertTrue(SessionManager.get_stream_data()["blow_signal_seen"])
+        self.assertFalse(SessionManager.get_stream_data()["blow_monitoring"])
+        self.assertTrue(safety_service.status()["blow_diagnostics"]["signal_seen"])
         self.assertEqual(safety_service.status()["rider_baseline_kg"], 65.0)
         conn = db.get_connection()
         try:
