@@ -5,15 +5,15 @@ read_timeout_seconds = 0.2
 reconnect_delay_seconds = 2.0
 
 [alcohol]
-minimum_delta = 100
+minimum_delta = 2000
 required_positive_samples = 3
 minimum_sample_count = 8
-absolute_threshold = 400
+absolute_threshold = 1000
 
 [blow]
 gpio = 17
-minimum_seconds = 1.0
-max_gap_seconds = 0.2
+minimum_seconds = 0.5
+max_gap_seconds = 0.5
 poll_interval_seconds = 0.02
 baseline_timeout_seconds = 6.0
 

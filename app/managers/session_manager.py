@@ -114,7 +114,7 @@ class SessionManager:
         state.current_session["sensor"]["gas"] = gas
 
     @staticmethod
-    def reset_alcohol_state(required_seconds: float = 1.0):
+    def reset_alcohol_state(required_seconds: float = 0.5):
         sensor = state.current_session["sensor"]
         sensor["mq3_baseline"] = None
         sensor["baseline_status"] = "measuring"

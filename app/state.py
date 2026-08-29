@@ -15,7 +15,7 @@ current_session = {
         "baseline_status": "measuring",
         "blow_status": "ready",
         "blow_duration": 0.0,
-        "blow_required_seconds": 1.0,
+        "blow_required_seconds": 0.5,
         "blow_progress": 0.0,
         "hw484_blow_detected": False,
         "blow_monitoring": False,

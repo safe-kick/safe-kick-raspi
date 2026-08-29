@@ -15,17 +15,17 @@ class SerialConfig:
 
 @dataclass(frozen=True)
 class AlcoholConfig:
-    minimum_delta: int = 100
+    minimum_delta: int = 2000
     required_positive_samples: int = 3
     minimum_sample_count: int = 8
-    absolute_threshold: int = 400
+    absolute_threshold: int = 1000
 
 
 @dataclass(frozen=True)
 class BlowConfig:
     gpio: int = 17
-    minimum_seconds: float = 1.0
-    max_gap_seconds: float = 0.2
+    minimum_seconds: float = 0.5
+    max_gap_seconds: float = 0.5
     poll_interval_seconds: float = 0.02
     baseline_timeout_seconds: float = 6.0
 

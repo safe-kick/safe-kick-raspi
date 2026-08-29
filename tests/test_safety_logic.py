@@ -19,15 +19,17 @@ class FakeClock:
 
 class SafetyLogicTest(unittest.TestCase):
     def test_alcohol_requires_three_consecutive_positive_samples(self) -> None:
-        policy = AlcoholPolicy(AlcoholConfig())
+        policy = AlcoholPolicy(
+            AlcoholConfig(minimum_delta=2000, absolute_threshold=10000)
+        )
 
         nonconsecutive = policy.evaluate(
             100,
-            [200, 210, 150, 220, 230, 150, 240, 150],
+            [2100, 2200, 150, 2300, 2400, 150, 2500, 150],
         )
         consecutive = policy.evaluate(
             100,
-            [150, 200, 210, 220, 150, 150, 150, 150],
+            [150, 2100, 2200, 2300, 150, 150, 150, 150],
         )
 
         self.assertEqual(nonconsecutive.positive_samples, 5)
@@ -36,15 +38,15 @@ class SafetyLogicTest(unittest.TestCase):
         self.assertTrue(consecutive.unsafe)
 
     def test_alcohol_fails_when_absolute_threshold_is_exceeded(self) -> None:
-        policy = AlcoholPolicy(AlcoholConfig(absolute_threshold=400))
+        policy = AlcoholPolicy(AlcoholConfig(absolute_threshold=1000))
 
         at_threshold = policy.evaluate(
-            350,
-            [370, 380, 390, 400, 390, 380, 370, 360],
+            900,
+            [920, 940, 960, 1000, 980, 960, 940, 920],
         )
         above_threshold = policy.evaluate(
-            350,
-            [370, 380, 390, 401, 390, 380, 370, 360],
+            900,
+            [920, 940, 960, 1001, 980, 960, 940, 920],
         )
 
         self.assertFalse(at_threshold.unsafe)
@@ -150,7 +152,7 @@ class SafetyLogicTest(unittest.TestCase):
         controller.handle(parse_line("MQ3_BASELINE:600"))
         controller.handle(parse_line("[END_MQ3_BASELINE]"))
         controller.on_authentication_completed()
-        for value in [720] * 8:
+        for value in [1001] * 8:
             controller.handle(parse_line(f"MQ3:{value}"))
         controller.set_hw484_result(True)
         controller.handle(parse_line("MEASURE_END"))
