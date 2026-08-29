@@ -44,9 +44,9 @@ class WeightConfig:
     baseline_delay_seconds: float = 5.0
     minimum_baseline_kg: float = 20.0
     maximum_baseline_kg: float = 100.0
-    two_person_delta_kg: float = 30.0
+    two_person_delta_kg: float = 10.0
     candidate_sample_count: int = 2
-    clear_delta_kg: float = 20.0
+    clear_delta_kg: float = 5.0
     clear_sample_count: int = 2
     lock_after_warning_seconds: float = 5.0
 

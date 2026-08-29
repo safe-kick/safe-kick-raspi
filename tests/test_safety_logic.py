@@ -162,21 +162,21 @@ class SafetyLogicTest(unittest.TestCase):
 
         self.assertEqual(monitor.observe(65, 5), OccupancyAction.NONE)
         self.assertEqual(monitor.baseline_kg, 65)
-        self.assertEqual(monitor.observe(95, 6), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(95, 7), OccupancyAction.WARN)
-        self.assertEqual(monitor.observe(95, 11), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(95, 12), OccupancyAction.LOCK)
+        self.assertEqual(monitor.observe(75, 6), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(75, 7), OccupancyAction.WARN)
+        self.assertEqual(monitor.observe(75, 11), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(75, 12), OccupancyAction.LOCK)
 
     def test_two_person_warning_clears_when_weight_recovers(self) -> None:
         monitor = OccupancyMonitor(WeightConfig())
         monitor.start(65, 0)
         monitor.observe(65, 5)
 
-        self.assertEqual(monitor.observe(95, 6), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(95, 7), OccupancyAction.WARN)
-        self.assertEqual(monitor.observe(85, 8), OccupancyAction.NONE)
-        self.assertEqual(monitor.observe(85, 9), OccupancyAction.CLEAR_WARNING)
-        self.assertEqual(monitor.observe(95, 10), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(75, 6), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(75, 7), OccupancyAction.WARN)
+        self.assertEqual(monitor.observe(69, 8), OccupancyAction.NONE)
+        self.assertEqual(monitor.observe(69, 9), OccupancyAction.CLEAR_WARNING)
+        self.assertEqual(monitor.observe(75, 10), OccupancyAction.NONE)
 
     def test_ride_baseline_uses_first_valid_sample_after_five_seconds(self) -> None:
         monitor = OccupancyMonitor(WeightConfig())
